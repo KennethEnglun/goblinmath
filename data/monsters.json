@@ -1,0 +1,68 @@
+[
+  {
+    "id": "green_blob",
+    "name": "Green Blob",
+    "name_zh": "綠豆怪",
+    "max_hp": 30,
+    "attack": 1,
+    "reward_exp": 20,
+    "reward_coin": 10,
+    "sprite": "res://assets/monsters/green_blob.svg",
+    "generated_sprite": "res://assets/monsters/battle/green_blob_battle_v1.png"
+  },
+  {
+    "id": "mushroom",
+    "name": "Little Mushroom",
+    "name_zh": "小菇怪",
+    "max_hp": 32,
+    "attack": 1,
+    "reward_exp": 25,
+    "reward_coin": 12,
+    "sprite": "res://assets/monsters/mushroom.svg",
+    "generated_sprite": "res://assets/monsters/battle/mushroom_battle_v1.png"
+  },
+  {
+    "id": "pollen_puff",
+    "name": "Pollen Puff",
+    "name_zh": "花粉啾",
+    "max_hp": 34,
+    "attack": 1,
+    "reward_exp": 30,
+    "reward_coin": 14,
+    "sprite": "res://assets/monsters/pollen_puff.svg",
+    "generated_sprite": "res://assets/monsters/battle/pollen_puff_battle_v1.png"
+  },
+  {
+    "id": "sakura_sprite",
+    "name": "Sakura Sprite",
+    "name_zh": "櫻花精靈",
+    "max_hp": 42,
+    "attack": 1,
+    "reward_exp": 45,
+    "reward_coin": 20,
+    "sprite": "res://assets/monsters/sakura_sprite.svg",
+    "generated_sprite": "res://assets/monsters/battle/sakura_sprite_battle_v1.png"
+  },
+  {
+    "id": "star_puff",
+    "name": "Star Puff",
+    "name_zh": "星星噗",
+    "max_hp": 50,
+    "attack": 1,
+    "reward_exp": 55,
+    "reward_coin": 24,
+    "sprite": "res://assets/monsters/star_puff.svg",
+    "generated_sprite": "res://assets/monsters/battle/star_puff_battle_v1.png"
+  },
+  {
+    "id": "crown_slime_boss",
+    "name": "Crown Slime",
+    "name_zh": "星冠史萊姆",
+    "max_hp": 72,
+    "attack": 1,
+    "reward_exp": 160,
+    "reward_coin": 50,
+    "sprite": "res://assets/monsters/crown_slime_boss.svg",
+    "generated_sprite": "res://assets/monsters/battle/crown_slime_boss_battle_v1.png"
+  }
+]

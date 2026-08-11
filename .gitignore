@@ -1,0 +1,15 @@
+# Godot generated state and editor metadata
+.godot/
+
+# Generated exports and local build output
+build/
+output/
+tmp/
+
+# Local tooling artifacts
+scripts/tools/__pycache__/
+*.py[cod]
+.DS_Store
+
+# Local test logs
+*.log

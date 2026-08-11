@@ -1,0 +1,16 @@
+{
+  "currency": "gems",
+  "single_cost": 100,
+  "ten_cost": 1000,
+  "first_clear_reward": 30,
+  "ad_reward": 100,
+  "merge_count": 3,
+  "ten_pull_guarantee": "uncommon_plus",
+  "rarity_weights": {
+    "common": 0.60,
+    "uncommon": 0.28,
+    "rare": 0.10,
+    "epic": 0.02
+  },
+  "direct_rarities": ["common", "uncommon", "rare", "epic"]
+}

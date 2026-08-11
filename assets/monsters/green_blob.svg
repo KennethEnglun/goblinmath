@@ -1,0 +1,18 @@
+<svg width="420" height="420" viewBox="0 0 420 420" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="12" stdDeviation="8" flood-color="#466b62" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <ellipse cx="210" cy="370" rx="110" ry="18" fill="#436e68" opacity="0.18"/>
+  <g filter="url(#shadow)" stroke="#41685f" stroke-width="9" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M100 328C78 303 77 255 91 205C109 141 150 102 210 102C270 102 311 141 329 205C343 255 342 303 320 328C289 363 131 363 100 328Z" fill="#72c5ad"/>
+    <path d="M113 216C117 159 154 125 210 125C266 125 303 159 307 216C274 194 146 194 113 216Z" fill="#91dbc2" stroke="none"/>
+    <circle cx="162" cy="247" r="11" fill="#41685f" stroke="none"/>
+    <circle cx="258" cy="247" r="11" fill="#41685f" stroke="none"/>
+    <path d="M166 286C187 308 233 308 254 286" fill="#e8797c"/>
+    <path d="M196 285L203 297L211 285L219 297L226 285" fill="#fff9ec" stroke="none"/>
+    <circle cx="130" cy="285" r="18" fill="#f49b9b" opacity="0.75" stroke="none"/>
+    <circle cx="290" cy="285" r="18" fill="#f49b9b" opacity="0.75" stroke="none"/>
+  </g>
+</svg>

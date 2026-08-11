@@ -1,0 +1,4 @@
+FROM nginx:1.29-alpine
+
+COPY web/ /usr/share/nginx/html/
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
