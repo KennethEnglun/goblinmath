@@ -234,7 +234,9 @@ func _test_save_migration() -> void:
 		"owned_equipment": ["twig_club", "bad_item", "twig_club"],
 		"equipped_weapon": "twig_club"
 	})
-	_check(int(normalized.get("save_version", 0)) == SaveManager.SAVE_VERSION and SaveManager.SAVE_VERSION == 5, "Old saves migrate to the current version")
+	_check(int(normalized.get("save_version", 0)) == SaveManager.SAVE_VERSION and SaveManager.SAVE_VERSION == 7, "Old saves migrate to the current version")
+	_check(int(normalized.get("stat_points_total", -1)) == 2, "Migrated saves retain the total level-earned stat points")
+	_check(int((normalized.get("stat_points_spent", {}) as Dictionary).get("attack", 0)) == 1, "Migrated saves reconstruct legacy attack allocation points")
 	_check(int(normalized.get("gems", 0)) == GameBalance.BASE_GEMS, "Migrated saves receive the one-time gacha introduction gems")
 	_check(int(normalized.get("base_attack", 0)) == 15, "Legacy attack progression survives migration")
 	_check(int(normalized.get("unlocked_stage", 0)) == 99, "Progress is no longer capped at Stage 10")
@@ -244,6 +246,11 @@ func _test_save_migration() -> void:
 	_check(int((migrated_scores.get("1", {}) as Dictionary).get("best_stars", 0)) == GameBalance.MAX_STAGE_STARS and is_equal_approx(float((migrated_scores.get("1", {}) as Dictionary).get("best_accuracy", 0.0)), 1.0), "Stage score records are clamped during migration")
 	_check((normalized.get("inventory", []) as Array).size() == 1, "Legacy equipment migrates without duplicates")
 	_check(str((normalized.get("equipped", {}) as Dictionary).get("weapon", "")) == "item_1", "Legacy equipped weapon migrates to an item instance")
+	var legacy_levelled: Dictionary = SaveManager._normalize_save({
+		"inventory": [{"uid": "legacy_levelled", "template_id": "twig_club", "level": 3, "acquired_stage": 2}]
+	})
+	var legacy_levelled_item: Dictionary = (legacy_levelled.get("inventory", []) as Array)[0]
+	_check(int(legacy_levelled_item.get("upgrade_coins_spent", 0)) == EquipmentSystem.upgrade_coins_spent_for_level(3, "common"), "Legacy equipment reconstructs cumulative strengthening coins")
 
 func _test_save_recovery_and_persistence() -> void:
 	var original_path: String = SaveManager.storage_path
@@ -335,7 +342,7 @@ func _test_bounded_endless_metadata() -> void:
 		old_version_file = null
 	var migrated_current: Dictionary = SaveManager.load_game()
 	var persisted_current: Variant = JSON.parse_string(FileAccess.get_file_as_string(migration_path))
-	_check(int(migrated_current.get("save_version", 0)) == 5 and persisted_current is Dictionary and int((persisted_current as Dictionary).get("save_version", 0)) == 5, "Version 3 saves migrate and persist the bounded metadata schema")
+	_check(int(migrated_current.get("save_version", 0)) == SaveManager.SAVE_VERSION and persisted_current is Dictionary and int((persisted_current as Dictionary).get("save_version", 0)) == SaveManager.SAVE_VERSION, "Version 3 saves migrate and persist the bounded metadata schema")
 	_cleanup_save_files(migration_path)
 
 func _test_character_progression() -> void:
@@ -386,7 +393,11 @@ func _test_character_progression() -> void:
 	_check(int(level_result.get("levels_gained", 0)) >= 1 and GameManager.get_level() >= 2, "Enough EXP levels the character")
 	_check(GameManager.get_stat_points() >= 1, "Leveling awards a permanent stat point")
 	var attack_before: int = GameManager.get_base_attack()
+	var total_stat_points_before_spend: int = GameManager.get_total_stat_points()
 	_check(GameManager.spend_stat_point("attack") and GameManager.get_base_attack() == attack_before + 1, "Stat points can permanently improve attack")
+	_check(GameManager.get_total_stat_points() == total_stat_points_before_spend and GameManager.get_stat_points() == total_stat_points_before_spend - 1, "Spending a point keeps the total stat point count visible")
+	var attack_breakdown: Dictionary = GameManager.get_stat_breakdown().get("attack", {})
+	_check(int(attack_breakdown.get("total", 0)) == GameManager.get_attack() and int(attack_breakdown.get("allocated_points", 0)) == 1 and int(attack_breakdown.get("allocated_value", 0)) == 1, "Stat breakdown reports the allocated attack point and final total")
 
 func _test_equipment_actions() -> void:
 	GameManager.player_state = SaveManager.create_new_save()
@@ -412,8 +423,9 @@ func _test_equipment_actions() -> void:
 	GameManager.player_state["next_item_uid"] = 3
 	var attack_before: int = GameManager.get_attack()
 	_check(GameManager.equip_item("item_2") and GameManager.get_attack() > attack_before, "A weapon can be equipped and changes attack")
+	var upgrade_cost_before: int = EquipmentSystem.upgrade_cost(rare_item)
 	var upgrade_result: Dictionary = GameManager.upgrade_item("item_2")
-	_check(bool(upgrade_result.get("success", false)) and int((upgrade_result.get("item", {}) as Dictionary).get("level", 0)) == 2, "Equipment can be strengthened")
+	_check(bool(upgrade_result.get("success", false)) and int((upgrade_result.get("item", {}) as Dictionary).get("level", 0)) == 2 and int((upgrade_result.get("item", {}) as Dictionary).get("upgrade_coins_spent", 0)) == upgrade_cost_before, "Equipment strengthening records the paid coins")
 	_check(not bool(GameManager.sell_item("item_2").get("success", false)), "Equipped gear cannot be sold accidentally")
 	_check(GameManager.unequip_slot("weapon"), "Equipment can be removed")
 	_check(bool(GameManager.sell_item("item_2").get("success", false)), "Unequipped gear can be sold")
@@ -445,12 +457,16 @@ func _test_gacha_system() -> void:
 	GameManager.player_state = SaveManager.create_new_save()
 	var merge_inventory: Array = GameManager.get_inventory()
 	merge_inventory.append(EquipmentSystem.create_instance("twig_club", "item_2", 1, 1))
-	merge_inventory.append(EquipmentSystem.create_instance("twig_club", "item_3", 1, 1))
-	merge_inventory.append(EquipmentSystem.create_instance("twig_club", "item_4", 1, 1))
+	merge_inventory.append(EquipmentSystem.create_instance("twig_club", "item_3", 2, 1, EquipmentSystem.upgrade_coins_spent_for_level(2, "common")))
+	merge_inventory.append(EquipmentSystem.create_instance("twig_club", "item_4", 3, 1, EquipmentSystem.upgrade_coins_spent_for_level(3, "common")))
 	GameManager.player_state["inventory"] = merge_inventory
 	GameManager.player_state["next_item_uid"] = 5
+	var coins_before_merge: int = GameManager.get_coins()
+	var expected_refund: int = EquipmentSystem.upgrade_coins_spent_for_level(2, "common") + EquipmentSystem.upgrade_coins_spent_for_level(3, "common")
 	var merge_result: Dictionary = GameManager.merge_equipment(["item_2", "item_3", "item_4"])
-	_check(bool(merge_result.get("success", false)) and str((merge_result.get("item", {}) as Dictionary).get("template_id", "")) == "peach_wand", "Three identical common items merge into the next template")
+	var merged_item: Dictionary = merge_result.get("item", {})
+	_check(bool(merge_result.get("success", false)) and str(merged_item.get("template_id", "")) == "peach_wand" and int(merged_item.get("level", 0)) == 1 and int(merged_item.get("upgrade_coins_spent", -1)) == 0, "Same-template materials at different levels merge into a fresh next-tier Lv.1 item")
+	_check(int(merge_result.get("refund_coins", 0)) == expected_refund and GameManager.get_coins() == coins_before_merge + expected_refund, "Merging refunds all recorded strengthening coins")
 
 	GameManager.player_state = SaveManager.create_new_save()
 	var legendary_inventory: Array = GameManager.get_inventory()
@@ -463,12 +479,12 @@ func _test_gacha_system() -> void:
 
 	var invalid_items: Array = [
 		EquipmentSystem.create_instance("twig_club", "item_5", 2, 1),
-		EquipmentSystem.create_instance("twig_club", "item_6", 1, 1),
+		EquipmentSystem.create_instance("leaf_cap", "item_6", 1, 1),
 		EquipmentSystem.create_instance("twig_club", "item_7", 1, 1)
 	]
 	var invalid_state: Dictionary = SaveManager.create_new_save()
 	invalid_state["inventory"] = invalid_items
-	_check(str(GachaSystem.validate_merge(invalid_items, invalid_state).get("reason", "")) == "item_must_be_level_one", "Strengthened equipment cannot be merged")
+	_check(str(GachaSystem.validate_merge(invalid_items, invalid_state).get("reason", "")) == "templates_must_match", "Different equipment templates cannot be merged")
 
 	var large_inventory: Array = []
 	for index: int in range(130):

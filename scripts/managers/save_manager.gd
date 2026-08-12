@@ -1,7 +1,7 @@
 extends Node
 
 ## Versioned local persistence with migration, normalization, and a backup file.
-const SAVE_VERSION: int = 5
+const SAVE_VERSION: int = 7
 const SAVE_PATH: String = "user://save.json"
 
 var current_data: Dictionary = {}
@@ -19,6 +19,8 @@ func create_new_save() -> Dictionary:
 		"coins": GameBalance.BASE_COINS,
 		"gems": GameBalance.BASE_GEMS,
 		"stat_points": 0,
+		"stat_points_total": 0,
+		"stat_points_spent": {"attack": 0, "max_hp": 0, "defense": 0, "luck": 0},
 		"base_attack": GameBalance.BASE_ATTACK,
 		"base_max_hp": GameBalance.BASE_MAX_HP,
 		"base_defense": GameBalance.BASE_DEFENSE,
@@ -150,6 +152,12 @@ func _normalize_save(raw: Dictionary) -> Dictionary:
 	normalized["coins"] = maxi(0, _to_int(normalized["coins"], GameBalance.BASE_COINS))
 	normalized["gems"] = maxi(0, _to_int(normalized["gems"], GameBalance.BASE_GEMS))
 	normalized["stat_points"] = maxi(0, _to_int(normalized["stat_points"], 0))
+	var level_stat_points: int = maxi(0, (int(normalized["level"]) - GameBalance.BASE_LEVEL) * GameBalance.LEVEL_STAT_POINT_GAIN)
+	var fallback_total_stat_points: int = maxi(level_stat_points, int(normalized["stat_points"]))
+	normalized["stat_points_total"] = maxi(
+		fallback_total_stat_points,
+		_to_int(normalized["stat_points_total"], fallback_total_stat_points)
+	)
 	normalized["base_attack"] = maxi(1, _to_int(normalized["base_attack"], GameBalance.BASE_ATTACK))
 	normalized["base_max_hp"] = maxi(1, _to_int(normalized["base_max_hp"], GameBalance.BASE_MAX_HP))
 	normalized["base_defense"] = maxi(0, _to_int(normalized["base_defense"], GameBalance.BASE_DEFENSE))
@@ -158,6 +166,7 @@ func _normalize_save(raw: Dictionary) -> Dictionary:
 		normalized["base_max_hp"] = GameBalance.BASE_MAX_HP + ((int(normalized["level"]) - 1) * GameBalance.LEVEL_HP_GAIN)
 	if not raw.has("base_attack"):
 		normalized["base_attack"] = GameBalance.BASE_ATTACK + ((int(normalized["level"]) - 1) * GameBalance.LEVEL_ATTACK_GAIN)
+	normalized["stat_points_spent"] = _normalize_stat_points_spent(raw, normalized)
 
 	normalized["current_stage"] = clampi(_to_int(normalized["current_stage"], GameBalance.STARTING_STAGE), 1, GameBalance.MAX_STAGE_ID)
 	normalized["unlocked_stage"] = clampi(_to_int(normalized["unlocked_stage"], GameBalance.STARTING_STAGE), 1, GameBalance.MAX_STAGE_ID)
@@ -197,6 +206,25 @@ func _normalize_save(raw: Dictionary) -> Dictionary:
 	normalized["total_correct_answers"] = mini(correct_answers, question_count)
 	normalized["total_mistakes"] = mini(mistakes, question_count - int(normalized["total_correct_answers"]))
 	return normalized
+
+func _normalize_stat_points_spent(raw: Dictionary, normalized: Dictionary) -> Dictionary:
+	var level: int = maxi(GameBalance.BASE_LEVEL, int(normalized.get("level", GameBalance.BASE_LEVEL)))
+	var level_attack: int = GameBalance.BASE_ATTACK + ((level - GameBalance.BASE_LEVEL) * GameBalance.LEVEL_ATTACK_GAIN)
+	var level_max_hp: int = GameBalance.BASE_MAX_HP + ((level - GameBalance.BASE_LEVEL) * GameBalance.LEVEL_HP_GAIN)
+	var fallback: Dictionary = {
+		"attack": maxi(0, int(normalized.get("base_attack", GameBalance.BASE_ATTACK)) - level_attack),
+		"max_hp": maxi(0, int(floor(float(int(normalized.get("base_max_hp", GameBalance.BASE_MAX_HP)) - level_max_hp) / 3.0))),
+		"defense": maxi(0, int(normalized.get("base_defense", GameBalance.BASE_DEFENSE)) - GameBalance.BASE_DEFENSE),
+		"luck": maxi(0, int(normalized.get("base_luck", GameBalance.BASE_LUCK)) - GameBalance.BASE_LUCK)
+	}
+	var raw_spent: Variant = raw.get("stat_points_spent", {})
+	var result: Dictionary = {}
+	for stat: String in ["attack", "max_hp", "defense", "luck"]:
+		var value: int = int(fallback.get(stat, 0))
+		if raw_spent is Dictionary and raw_spent.has(stat):
+			value = _to_int(raw_spent.get(stat), value)
+		result[stat] = maxi(0, value)
+	return result
 
 func _normalize_completed_stages(raw_completed: Variant) -> Array[int]:
 	var clean: Array[int] = []

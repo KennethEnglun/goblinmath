@@ -12,7 +12,7 @@ Godot 4.6.3、GDScript、離線本機 2D 心算 RPG。遊戲目前包含開始�
 
 ## 轉蛋與裝備合成
 
-轉蛋頁位於 `scenes/gacha/gacha.tscn`，由 `scripts/gacha/gacha.gd` 與 `scripts/gacha/gacha_system.gd` 驅動。新存檔有 300 鑽石；單抽 100、十連 1000，首次通關每關獎勵 30 鑽石。稀有度依 Stage 4／8／10 逐步解鎖，Legendary 不會直接抽到，只能用三件相同、Lv.1、未穿戴的 Epic 合成。
+轉蛋頁位於 `scenes/gacha/gacha.tscn`，由 `scripts/gacha/gacha.gd` 與 `scripts/gacha/gacha_system.gd` 驅動。新存檔有 300 鑽石；單抽 100、十連 1000，首次通關每關獎勵 30 鑽石。稀有度依 Stage 4／8／10 逐步解鎖，Legendary 不會直接抽到，只能用三件相同模板、同稀有度、未穿戴的裝備合成下一階；三件材料等級不限，合成後固定為下一階 Lv.1，並退還材料過去支付的強化金幣。
 
 目前 `WATCH AD / 觀看廣告 +100` 只是 disabled 介面，尚未接入真實廣告 SDK，不會偽造鑽石獎勵。轉蛋與合成結果會先寫入 `user://save.json`，背包不再截斷 120 件。
 
@@ -76,6 +76,6 @@ Railway 建立 service 時選 GitHub repo `KennethEnglun/goblinmath`，root dire
 
 玩家進度寫入 `user://save.json`，並保留 `user://save.json.bak`。存檔包含關卡解鎖、完成關卡、星級、嘗試次數、EXP、金幣、屬性、裝備、掉落保底與統計資料。
 
-目前存檔版本為 5，另包含 `gems` 鑽石欄位；舊版首次遷移時會補發一次 300 鑽石，損壞存檔會沿用 backup recovery 流程。
+目前存檔版本為 7，另包含 `gems` 鑽石、總能力點數、各能力加點紀錄與裝備累計強化花費欄位；舊版首次遷移時會補發一次 300 鑽石，舊裝備會按等級重建累計強化花費，損壞存檔會沿用 backup recovery 流程。
 
 無限章節的星級／嘗試明細會保留 World 1 與最近進度，最多 128 筆，避免長期遊玩讓本機存檔無限膨脹；完成進度則由 sequential high-water mark 持續保留。

@@ -6,6 +6,17 @@ const TAB_EQUIPMENT: String = "equipment"
 const TAB_BAG: String = "bag"
 const TAB_IDS: Array[String] = [TAB_PROFILE, TAB_EQUIPMENT, TAB_BAG]
 const INVENTORY_SORT_MODES: Array[String] = ["rarity", "slot", "level"]
+const SCROLL_DRAG_THRESHOLD: float = 12.0
+const BAG_HEADER_HEIGHT: float = 128.0
+const BAG_CARD_HEIGHT: float = 448.0
+const BAG_CARD_MARGIN: int = 24
+const BAG_ITEM_ICON_SIZE: Vector2 = Vector2(252, 252)
+const BAG_ICON_OFFSET: int = 32
+const BAG_ICON_COLUMN_WIDTH: float = 252.0 + BAG_ICON_OFFSET
+const BAG_ACTION_COLUMN_WIDTH: float = 220.0
+const BAG_ACTION_BUTTON_SIZE: Vector2 = Vector2(220, 100)
+const BAG_ACTION_GAP: int = 8
+const BAG_ACTION_STACK_HEIGHT: float = 316.0
 
 const BACKGROUND_PATH: String = "res://assets/ui/character/character_upgrade_bg_v1.png"
 const AMBIENT_PATH: String = "res://assets/ui/start/start_effects_v2.png"
@@ -35,6 +46,12 @@ var active_tab: String = TAB_PROFILE
 var pending_sell_uid: String = ""
 var inventory_sort_mode: String = "rarity"
 var character_top_offset: float = 0.0
+var scroll_drag_active: bool = false
+var scroll_dragged: bool = false
+var scroll_drag_pointer_id: int = -1
+var scroll_drag_start_position: Vector2 = Vector2.ZERO
+var scroll_drag_last_position: Vector2 = Vector2.ZERO
+var scroll_drag_scroll: ScrollContainer
 
 var character_background_layer: TextureRect
 var character_ambient_layer: TextureRect
@@ -57,6 +74,7 @@ var bag_content: Control
 var equipment_row: HBoxContainer
 var inventory_list: VBoxContainer
 var tab_buttons: Dictionary = {}
+var stat_buttons: Dictionary = {}
 
 var level_label: Label
 var exp_label: Label
@@ -69,8 +87,39 @@ var equipment_bonus_label: Label
 var message_label: Label
 
 func _ready() -> void:
+	set_process_input(true)
 	_build_screen()
 	_refresh_all()
+
+func _input(event: InputEvent) -> void:
+	var active_scroll: ScrollContainer = _get_active_scroll()
+	if active_scroll == null or not is_instance_valid(active_scroll):
+		return
+	if event is InputEventMouseButton:
+		var mouse_event: InputEventMouseButton = event as InputEventMouseButton
+		if mouse_event.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if mouse_event.pressed:
+			_begin_scroll_drag(mouse_event.position, 0, active_scroll)
+		elif scroll_drag_active and scroll_drag_pointer_id == 0:
+			_end_scroll_drag()
+		return
+	if event is InputEventMouseMotion and scroll_drag_active and scroll_drag_pointer_id == 0:
+		var mouse_motion: InputEventMouseMotion = event as InputEventMouseMotion
+		if mouse_motion.button_mask & MOUSE_BUTTON_MASK_LEFT:
+			_update_scroll_drag(mouse_motion.position)
+		return
+	if event is InputEventScreenTouch:
+		var touch_event: InputEventScreenTouch = event as InputEventScreenTouch
+		if touch_event.pressed:
+			_begin_scroll_drag(touch_event.position, touch_event.index, active_scroll)
+		elif scroll_drag_active and scroll_drag_pointer_id == touch_event.index:
+			_end_scroll_drag()
+		return
+	if event is InputEventScreenDrag and scroll_drag_active:
+		var screen_drag: InputEventScreenDrag = event as InputEventScreenDrag
+		if screen_drag.index == scroll_drag_pointer_id:
+			_update_scroll_drag(screen_drag.position)
 
 func _build_screen() -> void:
 	_build_visual_layers()
@@ -248,22 +297,51 @@ func _build_tab_contents() -> void:
 
 	bag_content = _make_stack("BagContent")
 	bag_scroll.add_child(bag_content)
-	var bag_header: HBoxContainer = HBoxContainer.new()
+	var bag_header: Panel = UITheme.make_panel(Color(1.0, 0.98, 0.94, 0.82), Color("#f0c99d"), 26, 1)
 	bag_header.name = "BagHeader"
-	bag_header.custom_minimum_size = Vector2(0, 112)
+	bag_header.custom_minimum_size = Vector2(988, BAG_HEADER_HEIGHT)
+	bag_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bag_content.add_child(bag_header)
-	inventory_count_label = UITheme.make_label("", 30, UITheme.INK)
+	var bag_header_row: Control = Control.new()
+	bag_header_row.name = "BagHeaderRow"
+	bag_header_row.position = Vector2(16, 16)
+	bag_header_row.size = Vector2(956, BAG_HEADER_HEIGHT - 32)
+	bag_header.add_child(bag_header_row)
+	var capacity_panel: Panel = UITheme.make_panel(Color(1.0, 1.0, 1.0, 0.30), Color(1.0, 1.0, 1.0, 0.0), 18, 0)
+	capacity_panel.name = "BagCapacityPanel"
+	capacity_panel.position = Vector2.ZERO
+	capacity_panel.size = Vector2(300, 96)
+	capacity_panel.custom_minimum_size = Vector2(300, 96)
+	inventory_count_label = UITheme.make_label("", 27, UITheme.INK)
+	inventory_count_label.position = Vector2(14, 14)
+	inventory_count_label.size = Vector2(272, 68)
 	inventory_count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	inventory_count_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	bag_header.add_child(inventory_count_label)
-	bag_header.add_child(UITheme.make_label("ITEMS\n裝備清單", 21, UITheme.MUTED_INK))
-	inventory_sort_button = _make_small_button("SORT\n整理", Color("#d9edf0"), Vector2(190, 112))
+	inventory_count_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	capacity_panel.add_child(inventory_count_label)
+	bag_header_row.add_child(capacity_panel)
+	var header_tools: Control = Control.new()
+	header_tools.name = "BagHeaderTools"
+	header_tools.position = Vector2(312, 0)
+	header_tools.size = Vector2(644, 96)
+	bag_header_row.add_child(header_tools)
+	var items_label: Label = UITheme.make_label("ITEMS\n裝備清單", 21, UITheme.MUTED_INK)
+	items_label.name = "BagItemsLabel"
+	items_label.position = Vector2(272, 0)
+	items_label.size = Vector2(170, 96)
+	items_label.custom_minimum_size = Vector2(170, 96)
+	items_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	items_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	header_tools.add_child(items_label)
+	inventory_sort_button = _make_small_button("SORT\n整理", Color("#d9edf0"), Vector2(190, 96))
 	inventory_sort_button.name = "InventorySortButton"
+	inventory_sort_button.position = Vector2(454, 0)
+	inventory_sort_button.size = Vector2(190, 96)
 	inventory_sort_button.pressed.connect(_on_sort_inventory_pressed)
-	bag_header.add_child(inventory_sort_button)
+	header_tools.add_child(inventory_sort_button)
 	inventory_list = VBoxContainer.new()
 	inventory_list.name = "InventoryList"
 	inventory_list.custom_minimum_size = Vector2(988, 0)
+	inventory_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	inventory_list.add_theme_constant_override("separation", 12)
 	bag_content.add_child(inventory_list)
 
@@ -276,7 +354,7 @@ func _build_tab_contents() -> void:
 func _make_profile_summary() -> Panel:
 	var summary: Panel = UITheme.make_panel(Color(1, 0.97, 0.92, 0.96), Color("#dd9ba7"), 34, 5)
 	summary.name = "ProfileSummaryPanel"
-	summary.custom_minimum_size = Vector2(0, 245)
+	summary.custom_minimum_size = Vector2(0, 430)
 	UITheme.apply_texture_panel_skin(summary, PANEL_SKIN_PATH, 34)
 	var margin: MarginContainer = _panel_margin(summary, 24)
 	var stack: VBoxContainer = VBoxContainer.new()
@@ -287,8 +365,10 @@ func _make_profile_summary() -> Panel:
 	level_label.name = "ProfileLevelLabel"
 	exp_label = UITheme.make_label("", 24, UITheme.MUTED_INK)
 	exp_label.name = "ProfileExpLabel"
-	stats_label = UITheme.make_label("", 24, UITheme.MUTED_INK)
+	stats_label = UITheme.make_label("", 21, UITheme.MUTED_INK)
 	stats_label.name = "ProfileStatsLabel"
+	stats_label.custom_minimum_size = Vector2(0, 250)
+	stats_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	for label: Label in [level_label, exp_label, stats_label]:
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		stack.add_child(label)
@@ -350,6 +430,8 @@ func _make_scroll(scroll_name: String, parent: Control) -> ScrollContainer:
 	scroll.size = parent.size
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	scroll.follow_focus = true
+	scroll.scroll_deadzone = 18
 	parent.add_child(scroll)
 	return scroll
 
@@ -357,12 +439,61 @@ func _make_stack(stack_name: String) -> VBoxContainer:
 	var stack: VBoxContainer = VBoxContainer.new()
 	stack.name = stack_name
 	stack.custom_minimum_size = Vector2(988, 0)
+	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	stack.add_theme_constant_override("separation", 16)
 	return stack
+
+func _get_active_scroll() -> ScrollContainer:
+	match active_tab:
+		TAB_PROFILE:
+			return profile_scroll
+		TAB_EQUIPMENT:
+			return equipment_scroll
+		TAB_BAG:
+			return bag_scroll
+	return null
+
+func _begin_scroll_drag(position: Vector2, pointer_id: int, scroll: ScrollContainer) -> void:
+	if scroll == null or not scroll.visible or not scroll.get_global_rect().has_point(position):
+		return
+	scroll_drag_active = true
+	scroll_dragged = false
+	scroll_drag_pointer_id = pointer_id
+	scroll_drag_start_position = position
+	scroll_drag_last_position = position
+	scroll_drag_scroll = scroll
+
+func _update_scroll_drag(position: Vector2) -> void:
+	if not scroll_drag_active or scroll_drag_scroll == null:
+		return
+	if not scroll_dragged and position.distance_to(scroll_drag_start_position) >= SCROLL_DRAG_THRESHOLD:
+		scroll_dragged = true
+	if not scroll_dragged:
+		scroll_drag_last_position = position
+		return
+	var delta_y: float = position.y - scroll_drag_last_position.y
+	var max_scroll: int = maxi(0, int(ceil(scroll_drag_scroll.get_v_scroll_bar().max_value)))
+	scroll_drag_scroll.scroll_vertical = clampi(int(round(float(scroll_drag_scroll.scroll_vertical) - delta_y)), 0, max_scroll)
+	scroll_drag_last_position = position
+	get_viewport().set_input_as_handled()
+
+func _end_scroll_drag() -> void:
+	if scroll_dragged:
+		get_viewport().set_input_as_handled()
+	_clear_scroll_drag()
+
+func _clear_scroll_drag() -> void:
+	scroll_drag_active = false
+	scroll_dragged = false
+	scroll_drag_pointer_id = -1
+	scroll_drag_start_position = Vector2.ZERO
+	scroll_drag_last_position = Vector2.ZERO
+	scroll_drag_scroll = null
 
 func set_active_tab(tab_id: String) -> void:
 	if not TAB_IDS.has(tab_id):
 		return
+	_clear_scroll_drag()
 	active_tab = tab_id
 	_refresh_active_tab()
 
@@ -387,22 +518,61 @@ func _refresh_active_tab() -> void:
 		equipment_scroll.scroll_vertical = 0
 	else:
 		bag_scroll.scroll_vertical = 0
+	_clear_scroll_drag()
 
 func _refresh_all(message: String = "") -> void:
 	if level_label == null:
 		return
 	level_label.text = "LV.%d  ·  第%d章" % [GameManager.get_level(), GameBalance.chapter_for_stage(int(GameManager.player_state.get("unlocked_stage", 1)))]
 	exp_label.text = "EXP %d / %d" % [GameManager.get_exp(), GameManager.get_required_exp()]
-	stats_label.text = "ATK %d   HP %d   DEF %d   LUCK %d" % [GameManager.get_attack(), GameManager.get_max_hp(), GameManager.get_defense(), GameManager.get_luck()]
+	var stat_breakdown: Dictionary = GameManager.get_stat_breakdown()
+	stats_label.text = _format_stat_breakdown(stat_breakdown)
+	_refresh_stat_buttons(stat_breakdown)
 	if equipment_bonus_label != null:
 		equipment_bonus_label.text = "目前套用：%s" % _format_stats(GameManager.get_equipped_stats())
-	points_label.text = "STAT POINTS %d\n可分配屬性點：%d" % [GameManager.get_stat_points(), GameManager.get_stat_points()]
+	var total_stat_points: int = GameManager.get_total_stat_points()
+	var available_stat_points: int = GameManager.get_stat_points()
+	points_label.text = "STAT POINTS %d / %d\n總能力點數：%d　可分配：%d" % [available_stat_points, total_stat_points, total_stat_points, available_stat_points]
 	inventory_count_label.text = "BAG %d / ∞\n背包容量" % GameManager.get_inventory().size()
 	coin_label.text = "%d  鑽石\n%d  金幣" % [GameManager.get_gems(), GameManager.get_coins()]
 	message_label.text = message
 	_refresh_equipment_slots()
 	_refresh_inventory()
 	_refresh_active_tab()
+
+func _format_stat_breakdown(stat_breakdown: Dictionary) -> String:
+	var lines: PackedStringArray = ["能力總值 / 分拆"]
+	var specs: Array = [
+		["attack", "ATK", "攻擊"],
+		["max_hp", "HP", "生命"],
+		["defense", "DEF", "防禦"],
+		["luck", "LUCK", "幸運"]
+	]
+	for spec: Array in specs:
+		var stat: String = str(spec[0])
+		var data: Dictionary = stat_breakdown.get(stat, {})
+		lines.append("%s %d（等級 %d + 加點 %d + 裝備 %d）" % [
+			str(spec[1]),
+			int(data.get("total", 0)),
+			int(data.get("level", 0)),
+			int(data.get("allocated_value", 0)),
+			int(data.get("equipment", 0))
+		])
+	return "\n".join(lines)
+
+func _refresh_stat_buttons(stat_breakdown: Dictionary) -> void:
+	var specs: Array = [
+		["attack", "ATK", "攻擊 +1"],
+		["max_hp", "MAX HP", "生命 +3"],
+		["defense", "DEF", "防禦 +1"],
+		["luck", "LUCK", "幸運 +1"]
+	]
+	for spec: Array in specs:
+		var stat: String = str(spec[0])
+		var button: Button = stat_buttons.get(stat) as Button
+		var data: Dictionary = stat_breakdown.get(stat, {})
+		if button != null:
+			UITheme.set_dual_button_text(button, "%s %d" % [str(spec[1]), int(data.get("total", 0))], str(spec[2]))
 
 func _refresh_equipment_slots() -> void:
 	if equipment_row == null:
@@ -463,50 +633,73 @@ func _make_item_card(item: Dictionary) -> Panel:
 	var slot: String = str(template.get("slot", "weapon"))
 	var card: Panel = UITheme.make_panel(Color(1, 0.98, 0.94, 0.98), EquipmentSystem.rarity_color(rarity), 25, 4)
 	card.name = "ItemCard_%s" % str(item.get("uid", "unknown"))
-	card.custom_minimum_size = Vector2(0, 430)
+	card.custom_minimum_size = Vector2(988, BAG_CARD_HEIGHT)
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	UITheme.apply_texture_panel_skin(card, PANEL_SKIN_PATH, 26)
-	var margin: MarginContainer = _panel_margin(card, 16)
-	var row: HBoxContainer = HBoxContainer.new()
-	row.add_theme_constant_override("separation", 12)
-	margin.add_child(row)
-	var item_icon: Panel = _make_item_icon(slot, true, Vector2(126, 126), item)
-	item_icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	item_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(item_icon)
+	var row: Control = Control.new()
+	row.name = "ItemRow_%s" % str(item.get("uid", "unknown"))
+	row.position = Vector2(BAG_CARD_MARGIN, BAG_CARD_MARGIN)
+	row.size = Vector2(988 - BAG_CARD_MARGIN * 2, BAG_CARD_HEIGHT - BAG_CARD_MARGIN * 2)
+	card.add_child(row)
+	var icon_column: Control = Control.new()
+	icon_column.name = "ItemIconColumn_%s" % str(item.get("uid", "unknown"))
+	icon_column.position = Vector2(0, 0)
+	icon_column.size = Vector2(BAG_ICON_COLUMN_WIDTH, row.size.y)
+	icon_column.custom_minimum_size = Vector2(BAG_ICON_COLUMN_WIDTH, 0)
+	var item_icon: Panel = _make_item_icon(slot, true, BAG_ITEM_ICON_SIZE, item)
+	item_icon.position = Vector2(BAG_ICON_OFFSET, (row.size.y - BAG_ITEM_ICON_SIZE.y) * 0.5)
+	item_icon.size = BAG_ITEM_ICON_SIZE
+	icon_column.add_child(item_icon)
+	row.add_child(icon_column)
 	var info: VBoxContainer = VBoxContainer.new()
-	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var action_start_x: float = row.size.x - BAG_ACTION_COLUMN_WIDTH
+	var info_start_x: float = BAG_ICON_COLUMN_WIDTH + 16.0
+	info.position = Vector2(info_start_x, 0)
+	info.size = Vector2(action_start_x - 16.0 - info_start_x, row.size.y)
 	info.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_child(info)
 	var equipped_text: String = "\nEQUIPPED / 已裝備" if EquipmentSystem.is_equipped(GameManager.player_state, str(item.get("uid", ""))) else ""
 	var name_label: Label = UITheme.make_label("%s%s" % [EquipmentSystem.describe_item(item), equipped_text], 25, EquipmentSystem.rarity_color(rarity))
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.add_child(name_label)
 	var slot_name: Dictionary = SLOT_NAMES.get(slot, {"primary": "ITEM", "secondary": "裝備"})
 	var detail: Label = UITheme.make_label("%s · %s\n%s" % [str(slot_name["secondary"]), _rarity_name(rarity), _format_stats(EquipmentSystem.get_item_stats(item))], 20, UITheme.MUTED_INK)
 	detail.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.add_child(detail)
+	var action_column: Control = Control.new()
+	action_column.name = "ItemActionColumn_%s" % str(item.get("uid", "unknown"))
+	action_column.position = Vector2(action_start_x, 0)
+	action_column.size = Vector2(BAG_ACTION_COLUMN_WIDTH, row.size.y)
+	action_column.custom_minimum_size = Vector2(BAG_ACTION_COLUMN_WIDTH, 0)
 	var actions: VBoxContainer = VBoxContainer.new()
-	actions.custom_minimum_size = Vector2(250, 372)
+	actions.name = "ItemActions_%s" % str(item.get("uid", "unknown"))
+	actions.position = Vector2(0, (row.size.y - BAG_ACTION_STACK_HEIGHT) * 0.5)
+	actions.size = Vector2(BAG_ACTION_COLUMN_WIDTH, BAG_ACTION_STACK_HEIGHT)
+	actions.custom_minimum_size = Vector2(BAG_ACTION_COLUMN_WIDTH, BAG_ACTION_STACK_HEIGHT)
 	actions.alignment = BoxContainer.ALIGNMENT_CENTER
-	actions.add_theme_constant_override("separation", 6)
-	row.add_child(actions)
+	actions.add_theme_constant_override("separation", BAG_ACTION_GAP)
+	action_column.add_child(actions)
+	row.add_child(action_column)
 	var uid: String = str(item.get("uid", ""))
 	var is_equipped: bool = EquipmentSystem.is_equipped(GameManager.player_state, uid)
-	var equip_button: Button = _make_small_button("EQUIPPED\n已穿戴" if is_equipped else "EQUIP\n穿戴", Color("#a8d8c4") if is_equipped else Color("#bfe7d3"), Vector2(0, 120))
+	var equip_button: Button = _make_small_button("EQUIPPED\n已穿戴" if is_equipped else "EQUIP\n穿戴", Color("#a8d8c4") if is_equipped else Color("#bfe7d3"), BAG_ACTION_BUTTON_SIZE)
 	equip_button.name = "EquipButton_%s" % uid
 	equip_button.disabled = is_equipped
 	equip_button.pressed.connect(_on_equip_pressed.bind(uid))
 	actions.add_child(equip_button)
 	var cost: int = EquipmentSystem.upgrade_cost(item)
-	var upgrade_button: Button = _make_small_button("UPGRADE\n強化 %d 金幣" % cost, Color("#ffe19a"), Vector2(0, 120))
+	var upgrade_button: Button = _make_small_button("UPGRADE\n強化 %d 金幣" % cost, Color("#ffe19a"), BAG_ACTION_BUTTON_SIZE)
 	upgrade_button.name = "UpgradeButton_%s" % uid
 	upgrade_button.disabled = GameManager.get_coins() < cost
 	upgrade_button.pressed.connect(_on_upgrade_pressed.bind(uid))
 	actions.add_child(upgrade_button)
 	var sell_text: String = "CONFIRM SELL\n確認出售 +%d" % EquipmentSystem.sell_value(item) if pending_sell_uid == uid else "SELL\n出售 +%d" % EquipmentSystem.sell_value(item)
 	var sell_color: Color = Color("#efa7b5") if pending_sell_uid == uid else Color("#f5ccd3")
-	var sell_button: Button = _make_small_button(sell_text, sell_color, Vector2(0, 120))
+	var sell_button: Button = _make_small_button(sell_text, sell_color, BAG_ACTION_BUTTON_SIZE)
 	sell_button.name = "SellButton_%s" % uid
 	sell_button.disabled = EquipmentSystem.is_equipped(GameManager.player_state, uid)
 	sell_button.pressed.connect(_on_sell_pressed.bind(uid))
@@ -541,6 +734,7 @@ func _add_stat_button(parent: GridContainer, title: String, stat: String) -> voi
 	button.name = "StatButton_%s" % stat
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.pressed.connect(_on_stat_pressed.bind(stat))
+	stat_buttons[stat] = button
 	parent.add_child(button)
 
 func _on_stat_pressed(stat: String) -> void:
