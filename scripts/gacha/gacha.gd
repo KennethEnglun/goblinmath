@@ -26,6 +26,7 @@ const SHARED_ICON_PATHS: Dictionary = {
 	"body": "res://assets/equipment/icons/equipment_body_v1.png"
 }
 const SLOT_NAMES: Dictionary = {"weapon": "武器", "head": "頭部", "body": "身體"}
+const SCROLL_DRAG_THRESHOLD: float = 12.0
 
 var top_offset: float = 0.0
 var active_mode: String = "summon"
@@ -62,8 +63,14 @@ var merge_tab_button: Button
 var result_list: VBoxContainer
 var result_info_label: Label
 var goblin_sprite: TextureRect
+var scroll_drag_active: bool = false
+var scroll_dragged: bool = false
+var scroll_drag_pointer_id: int = -1
+var scroll_drag_start_position: Vector2 = Vector2.ZERO
+var scroll_drag_last_position: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
+	set_process_input(true)
 	_build_visual_layers()
 	_build_hud()
 	_build_summon_stage()
@@ -77,6 +84,36 @@ func _ready() -> void:
 		ad_service.connect("reward_completed", ad_callback)
 	_set_mode("summon")
 	_refresh()
+
+func _input(event: InputEvent) -> void:
+	var active_scroll: ScrollContainer = _get_active_scroll()
+	if active_scroll == null or not is_instance_valid(active_scroll):
+		return
+	if event is InputEventMouseButton:
+		var mouse_event: InputEventMouseButton = event as InputEventMouseButton
+		if mouse_event.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if mouse_event.pressed:
+			_begin_scroll_drag(mouse_event.position, 0, active_scroll)
+		elif scroll_drag_active and scroll_drag_pointer_id == 0:
+			_end_scroll_drag()
+		return
+	if event is InputEventMouseMotion and scroll_drag_active and scroll_drag_pointer_id == 0:
+		var mouse_motion: InputEventMouseMotion = event as InputEventMouseMotion
+		if mouse_motion.button_mask & MOUSE_BUTTON_MASK_LEFT:
+			_update_scroll_drag(mouse_motion.position)
+		return
+	if event is InputEventScreenTouch:
+		var touch_event: InputEventScreenTouch = event as InputEventScreenTouch
+		if touch_event.pressed:
+			_begin_scroll_drag(touch_event.position, touch_event.index, active_scroll)
+		elif scroll_drag_active and scroll_drag_pointer_id == touch_event.index:
+			_end_scroll_drag()
+		return
+	if event is InputEventScreenDrag and scroll_drag_active:
+		var screen_drag: InputEventScreenDrag = event as InputEventScreenDrag
+		if screen_drag.index == scroll_drag_pointer_id:
+			_update_scroll_drag(screen_drag.position)
 
 func _build_visual_layers() -> void:
 	top_offset = maxf(0.0, UITheme.safe_area_insets(self).y - 86.0)
@@ -241,6 +278,8 @@ func _build_main_panels() -> void:
 	merge_scroll.name = "MergeScroll"
 	merge_scroll.custom_minimum_size = Vector2(0, 760)
 	merge_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	merge_scroll.follow_focus = true
+	merge_scroll.scroll_deadzone = 18
 	merge_stack.add_child(merge_scroll)
 	merge_content = VBoxContainer.new()
 	merge_content.name = "MergeContent"
@@ -291,7 +330,7 @@ func _build_actions() -> void:
 	merge_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	merge_button.pressed.connect(_on_merge_pressed)
 	stack.add_child(merge_button)
-	var help: Label = UITheme.make_label("相同模板、Lv.1、未穿戴的三件裝備可以合成下一階。\n廣告獎勵將在未來版本接入。", 21, UITheme.MUTED_INK)
+	var help: Label = UITheme.make_label("相同模板、同稀有度、未穿戴的三件裝備可以合成下一階，等級不限。\n合成會退還材料曾支付的強化金幣。\n廣告獎勵將在未來版本接入。", 21, UITheme.MUTED_INK)
 	help.name = "GachaHelpLabel"
 	help.custom_minimum_size = Vector2(0, 90)
 	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -346,6 +385,7 @@ func _build_toast_layer() -> void:
 func _set_mode(mode: String) -> void:
 	if mode != "summon" and mode != "merge":
 		return
+	_clear_scroll_drag()
 	active_mode = mode
 	if summon_panel != null:
 		summon_panel.visible = active_mode == "summon"
@@ -373,6 +413,46 @@ func _set_mode(mode: String) -> void:
 		action_panel.position.y = (1490.0 if active_mode == "merge" else 1290.0) + top_offset
 	if active_mode == "merge":
 		_refresh_merge_panel()
+
+func _get_active_scroll() -> ScrollContainer:
+	if active_mode == "merge" and merge_scroll != null and merge_scroll.visible:
+		return merge_scroll
+	return null
+
+func _begin_scroll_drag(position: Vector2, pointer_id: int, scroll: ScrollContainer) -> void:
+	if scroll == null or not scroll.visible or not scroll.get_global_rect().has_point(position):
+		return
+	scroll_drag_active = true
+	scroll_dragged = false
+	scroll_drag_pointer_id = pointer_id
+	scroll_drag_start_position = position
+	scroll_drag_last_position = position
+
+func _update_scroll_drag(position: Vector2) -> void:
+	if not scroll_drag_active or merge_scroll == null:
+		return
+	if not scroll_dragged and position.distance_to(scroll_drag_start_position) >= SCROLL_DRAG_THRESHOLD:
+		scroll_dragged = true
+	if not scroll_dragged:
+		scroll_drag_last_position = position
+		return
+	var delta_y: float = position.y - scroll_drag_last_position.y
+	var max_scroll: int = maxi(0, int(ceil(merge_scroll.get_v_scroll_bar().max_value)))
+	merge_scroll.scroll_vertical = clampi(int(round(float(merge_scroll.scroll_vertical) - delta_y)), 0, max_scroll)
+	scroll_drag_last_position = position
+	get_viewport().set_input_as_handled()
+
+func _end_scroll_drag() -> void:
+	if scroll_dragged:
+		get_viewport().set_input_as_handled()
+	_clear_scroll_drag()
+
+func _clear_scroll_drag() -> void:
+	scroll_drag_active = false
+	scroll_dragged = false
+	scroll_drag_pointer_id = -1
+	scroll_drag_start_position = Vector2.ZERO
+	scroll_drag_last_position = Vector2.ZERO
 
 func _refresh() -> void:
 	if gem_label == null:
@@ -402,12 +482,12 @@ func _refresh_merge_panel() -> void:
 	var valid_uids: Array[String] = []
 	for uid: String in selected_merge_uids:
 		var selected_item: Dictionary = EquipmentSystem.find_item(GameManager.get_inventory(), uid)
-		if not selected_item.is_empty() and int(selected_item.get("level", 1)) == 1 and not EquipmentSystem.is_equipped(GameManager.player_state, uid):
+		if not selected_item.is_empty() and int(selected_item.get("level", 1)) >= 1 and not EquipmentSystem.is_equipped(GameManager.player_state, uid):
 			valid_uids.append(uid)
 	selected_merge_uids = valid_uids
 	if selected_merge_uids.is_empty():
 		selected_merge_template = ""
-	merge_selection_label.text = "MATERIALS %d / 3\n選擇三件完全相同、Lv.1、未穿戴的裝備" % selected_merge_uids.size()
+	merge_selection_label.text = "MATERIALS %d / 3\n選擇三件相同模板、同稀有度、未穿戴的裝備（等級不限）" % selected_merge_uids.size()
 	UITheme.set_dual_button_text(merge_button, "MERGE", "合成 %d / 3" % selected_merge_uids.size())
 	merge_button.disabled = selected_merge_uids.size() != 3
 	_clear_children(merge_content)
@@ -471,7 +551,7 @@ func _make_merge_group(template: Dictionary, items: Array) -> Panel:
 			continue
 		var item: Dictionary = raw_item
 		var uid: String = str(item.get("uid", ""))
-		var is_valid: bool = int(item.get("level", 1)) == 1 and not EquipmentSystem.is_equipped(GameManager.player_state, uid)
+		var is_valid: bool = int(item.get("level", 1)) >= 1 and not EquipmentSystem.is_equipped(GameManager.player_state, uid)
 		var item_button: Button = _make_merge_material_button(item, template, rarity, is_valid, selected_merge_uids.has(uid))
 		if is_valid:
 			item_button.pressed.connect(_on_merge_item_pressed.bind(uid, str(template.get("id", ""))))
@@ -570,11 +650,12 @@ func _on_merge_pressed() -> void:
 	var result: Dictionary = GameManager.merge_equipment(selected_merge_uids)
 	if bool(result.get("success", false)):
 		var item: Dictionary = result.get("item", {})
+		var refund_coins: int = int(result.get("refund_coins", 0))
 		selected_merge_uids.clear()
 		selected_merge_template = ""
 		_refresh()
 		_play_merge_effect()
-		_show_toast("MERGE SUCCESS\n合成了 %s！" % EquipmentSystem.describe_item(item))
+		_show_toast("MERGE SUCCESS\n合成了 %s！\n退還 %d 金幣。" % [EquipmentSystem.describe_item(item), refund_coins])
 	else:
 		_show_toast(_reason_text(str(result.get("reason", "merge_failed"))))
 	_refresh()
@@ -678,9 +759,10 @@ func _reason_text(reason: String) -> String:
 		"not_enough_gems": "NOT ENOUGH GEMS\n鑽石不足。",
 		"empty_gacha_pool": "POOL LOCKED\n目前沒有可抽取的裝備。",
 		"requires_three_items": "NEED THREE ITEMS\n需要三件材料。",
-		"item_must_be_level_one": "LEVEL ONE ONLY\n強化過的裝備不能合成。",
+		"invalid_level": "INVALID LEVEL\n裝備等級無效。",
 		"equipped_item": "EQUIPPED ITEM\n穿戴中的裝備不能合成。",
 		"templates_must_match": "SAME ITEM ONLY\n請選擇相同模板。",
+		"rarities_must_match": "SAME RARITY ONLY\n請選擇相同稀有度。",
 		"max_rarity": "MAX RARITY\n這件裝備已經是最高階。"
 	}.get(reason, "TRY AGAIN\n操作未完成。")
 

@@ -7,18 +7,21 @@ const FLAT_STATS: Array[String] = ["attack", "max_hp", "defense", "luck"]
 const PERCENT_STATS: Array[String] = ["exp_bonus", "coin_bonus"]
 const RARITY_ORDER: Array[String] = ["common", "uncommon", "rare", "epic", "legendary"]
 const DROP_RARITIES: Array[String] = ["common", "uncommon", "rare", "epic"]
+const MAX_EXACT_UPGRADE_REBUILD_LEVEL: int = 100_000
+const MAX_SAFE_COIN_TOTAL: int = 9_000_000_000_000_000_000
 
 static func starter_item() -> Dictionary:
 	return create_instance("twig_club", "item_1", 1, 0)
 
-static func create_instance(template_id: String, uid: String, item_level: int = 1, acquired_stage: int = 1) -> Dictionary:
+static func create_instance(template_id: String, uid: String, item_level: int = 1, acquired_stage: int = 1, upgrade_coins_spent: int = 0) -> Dictionary:
 	if uid.is_empty() or DataManager.get_equipment(template_id).is_empty():
 		return {}
 	return {
 		"uid": uid,
 		"template_id": template_id,
 		"level": maxi(1, item_level),
-		"acquired_stage": maxi(0, acquired_stage)
+		"acquired_stage": maxi(0, acquired_stage),
+		"upgrade_coins_spent": maxi(0, upgrade_coins_spent)
 	}
 
 static func normalize_item(raw: Variant) -> Dictionary:
@@ -29,11 +32,20 @@ static func normalize_item(raw: Variant) -> Dictionary:
 	var template_id: String = str(item.get("template_id", "")).strip_edges()
 	if uid.is_empty() or DataManager.get_equipment(template_id).is_empty():
 		return {}
+	var item_level: int = clampi(_safe_int(item.get("level", 1), 1), 1, 2_000_000_000)
+	var acquired_stage: int = clampi(_safe_int(item.get("acquired_stage", 0), 0), 0, GameBalance.MAX_STAGE_ID)
+	var template: Dictionary = DataManager.get_equipment(template_id)
+	var rarity: String = str(template.get("rarity", "common"))
+	var raw_spent: Variant = item.get("upgrade_coins_spent", null)
+	var spent: int = upgrade_coins_spent_for_level(item_level, rarity)
+	if raw_spent is int or raw_spent is float:
+		spent = maxi(0, int(raw_spent))
 	return create_instance(
 		template_id,
 		uid,
-		clampi(_safe_int(item.get("level", 1), 1), 1, 2_000_000_000),
-		clampi(_safe_int(item.get("acquired_stage", 0), 0), 0, GameBalance.MAX_STAGE_ID)
+		item_level,
+		acquired_stage,
+		spent
 	)
 
 static func normalize_inventory(raw_inventory: Variant) -> Array:
@@ -128,6 +140,36 @@ static func upgrade_cost(item: Dictionary) -> int:
 		return 0
 	return GameBalance.equipment_upgrade_cost(int(item.get("level", 1)), str(template.get("rarity", "common")))
 
+static func get_upgrade_coins_spent(item: Dictionary) -> int:
+	var raw_spent: Variant = item.get("upgrade_coins_spent", null)
+	if raw_spent is int or raw_spent is float:
+		return maxi(0, int(raw_spent))
+	var template: Dictionary = get_item_template(item)
+	if template.is_empty():
+		return 0
+	return upgrade_coins_spent_for_level(int(item.get("level", 1)), str(template.get("rarity", "common")))
+
+static func upgrade_coins_spent_for_level(item_level: int, rarity: String) -> int:
+	var target_level: int = maxi(1, item_level)
+	if target_level <= 1:
+		return 0
+	var exact_end: int = mini(target_level, MAX_EXACT_UPGRADE_REBUILD_LEVEL)
+	var total: int = 0
+	for level: int in range(1, exact_end):
+		total = mini(MAX_SAFE_COIN_TOTAL, total + GameBalance.equipment_upgrade_cost(level, rarity))
+	if target_level <= MAX_EXACT_UPGRADE_REBUILD_LEVEL or total >= MAX_SAFE_COIN_TOTAL:
+		return total
+	# Legacy saves normally contain modest levels. Keep malformed extreme levels
+	# bounded while still returning a deterministic estimate instead of looping
+	# billions of times during save normalization.
+	var rarity_cost: float = GameBalance.rarity_multiplier(rarity)
+	var lower: float = float(exact_end - 1)
+	var upper: float = float(target_level - 1)
+	var estimated_tail: float = 18.0 * rarity_cost * (pow(upper, 2.35) - pow(lower, 2.35)) / 2.35
+	if estimated_tail >= float(MAX_SAFE_COIN_TOTAL - total):
+		return MAX_SAFE_COIN_TOTAL
+	return total + maxi(0, int(round(estimated_tail)))
+
 static func sell_value(item: Dictionary) -> int:
 	var template: Dictionary = get_item_template(item)
 	if template.is_empty():
@@ -214,6 +256,7 @@ static func validate_merge_items(items: Array, state: Dictionary) -> Dictionary:
 		return {"success": false, "reason": "requires_three_items"}
 	var equipped: Variant = state.get("equipped", {})
 	var first_template_id: String = ""
+	var first_rarity: String = ""
 	var seen_uids: Dictionary = {}
 	for raw_item: Variant in items:
 		if not raw_item is Dictionary:
@@ -229,14 +272,17 @@ static func validate_merge_items(items: Array, state: Dictionary) -> Dictionary:
 			return {"success": false, "reason": "invalid_template"}
 		if not SLOTS.has(str(template.get("slot", ""))):
 			return {"success": false, "reason": "invalid_slot"}
-		if int(item.get("level", 1)) != 1:
-			return {"success": false, "reason": "item_must_be_level_one"}
+		if int(item.get("level", 1)) < 1:
+			return {"success": false, "reason": "invalid_level"}
 		if equipped is Dictionary and equipped.values().has(uid):
 			return {"success": false, "reason": "equipped_item"}
 		if first_template_id.is_empty():
 			first_template_id = template_id
+			first_rarity = str(template.get("rarity", "common"))
 		elif template_id != first_template_id:
 			return {"success": false, "reason": "templates_must_match"}
+		elif str(template.get("rarity", "common")) != first_rarity:
+			return {"success": false, "reason": "rarities_must_match"}
 	var target_id: String = merge_target(first_template_id)
 	if target_id.is_empty():
 		return {"success": false, "reason": "max_rarity"}

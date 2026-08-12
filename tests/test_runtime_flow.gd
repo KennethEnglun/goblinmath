@@ -277,6 +277,35 @@ func _test_character_screen() -> void:
 		_check(not character.character_goblin_layer.visible, "BAG hides the large character showcase")
 		var inventory_list: VBoxContainer = character.find_child("InventoryList", true, false) as VBoxContainer
 		_check(inventory_list != null and inventory_list.get_child_count() >= 1, "Character screen renders the starter inventory")
+		if viewport_size == Vector2i(1080, 1920) and inventory_list != null and inventory_list.get_child_count() >= 1:
+			var bag_header: Control = character.find_child("BagHeader", true, false) as Control
+			var capacity_panel: Control = character.find_child("BagCapacityPanel", true, false) as Control
+			var items_label: Control = character.find_child("BagItemsLabel", true, false) as Control
+			var header_sort_button: Control = character.find_child("InventorySortButton", true, false) as Control
+			_check(bag_header != null and capacity_panel != null and items_label != null and header_sort_button != null, "BAG header exposes stable readable layout nodes")
+			if bag_header != null and capacity_panel != null and items_label != null and header_sort_button != null:
+				var header_rect: Rect2 = bag_header.get_global_rect()
+				var capacity_rect: Rect2 = capacity_panel.get_global_rect()
+				var items_rect: Rect2 = items_label.get_global_rect()
+				var header_sort_rect: Rect2 = header_sort_button.get_global_rect()
+				_check(header_rect.size.y >= 128.0 and header_rect.encloses(capacity_rect) and header_rect.encloses(items_rect) and header_rect.encloses(header_sort_rect), "BAG header content stays inside its translucent backing panel")
+				_check(not capacity_rect.intersects(items_rect) and not items_rect.intersects(header_sort_rect), "BAG capacity, ITEMS, and SORT keep separate readable zones")
+			var starter_card: Control = inventory_list.get_child(0) as Control
+			var starter_sprite: TextureRect = starter_card.find_child("EquipmentArtSprite", true, false) as TextureRect if starter_card != null else null
+			var starter_icon: Control = starter_sprite.get_parent() as Control if starter_sprite != null else null
+			var starter_buttons: Array[Node] = starter_card.find_children("*", "Button", true, false) if starter_card != null else []
+			_check(starter_icon != null and starter_icon.size == Vector2(252, 252), "BAG item artwork frame scales to the requested 2x size")
+			if starter_card != null and starter_icon != null:
+				var starter_card_rect: Rect2 = starter_card.get_global_rect()
+				var starter_icon_rect: Rect2 = starter_icon.get_global_rect()
+				_check(starter_icon_rect.position.x >= starter_card_rect.position.x + 48.0 and starter_card_rect.grow(-12.0).encloses(starter_icon_rect), "BAG item artwork moves right and remains inside the card")
+			for action_node: Node in starter_buttons:
+				var action_button: Button = action_node as Button
+				if action_button != null:
+					var action_rect: Rect2 = action_button.get_global_rect()
+					var card_rect: Rect2 = starter_card.get_global_rect()
+					_check(action_button.size.x >= 220.0 and action_button.size.y >= 96.0 and card_rect.grow(-12.0).encloses(action_rect), "BAG item action button stays inside the card safe area")
+					_check(action_rect.position.x >= card_rect.end.x - 244.0, "BAG item action button stays in the right-side action rail")
 		_check(GameManager.player_state == state_before_tabs, "Tab switching does not change saved player state")
 		character.set_active_tab("profile")
 		_check(character.character_goblin_layer.visible and character.character_action_layer.visible, "PROFILE restores character and stat action layers")
@@ -301,15 +330,41 @@ func _test_character_screen() -> void:
 			if stat_button != null:
 				await _push_pointer_tap(viewport, stat_button.get_global_rect().get_center())
 			_check(GameManager.get_base_attack() == attack_before + 1 and GameManager.get_stat_points() == 0, "Character screen allocates a stat point")
+			_check(GameManager.get_total_stat_points() == 1 and str(character.points_label.text).contains("總能力點數：1"), "Character screen keeps showing the total stat points after allocation")
+			_check(str(character.stats_label.text).contains("能力總值") and str(character.stats_label.text).contains("ATK 14") and str(character.stats_label.text).contains("加點 1"), "Character screen shows each final stat with its allocation breakdown")
 			var inventory: Array = GameManager.get_inventory()
 			inventory.append(EquipmentSystem.create_instance("leaf_cap", "item_2", 1, 1))
 			inventory.append(EquipmentSystem.create_instance("traveler_shorts", "item_3", 1, 1))
+			inventory.append(EquipmentSystem.create_instance("twig_club", "item_4", 1, 1))
+			inventory.append(EquipmentSystem.create_instance("leaf_cap", "item_5", 1, 1))
+			inventory.append(EquipmentSystem.create_instance("traveler_shorts", "item_6", 1, 1))
 			GameManager.player_state["inventory"] = inventory
-			GameManager.player_state["next_item_uid"] = 4
+			GameManager.player_state["next_item_uid"] = 7
 			GameManager.player_state["coins"] = 1_000
 			character._refresh_all()
 			character.set_active_tab("bag")
 			await _wait_frames(2)
+			var bag_scroll_before: int = character.bag_scroll.scroll_vertical
+			_check(character.bag_scroll.get_v_scroll_bar().max_value > 0.0, "Inventory list exposes vertical overflow when the bag has multiple items")
+			var populated_card: Control = character.find_child("ItemCard_item_2", true, false) as Control
+			if populated_card != null:
+				var populated_sprite: TextureRect = populated_card.find_child("EquipmentArtSprite", true, false) as TextureRect
+				var populated_icon: Control = populated_sprite.get_parent() as Control if populated_sprite != null else null
+				var populated_actions: Array[Node] = populated_card.find_children("*", "Button", true, false)
+				_check(populated_icon != null and populated_icon.size == Vector2(252, 252), "Populated BAG cards keep the enlarged item artwork")
+				if populated_icon != null:
+					_check(populated_card.get_global_rect().grow(-12.0).encloses(populated_icon.get_global_rect()), "Populated BAG artwork remains within the card")
+				for action_node: Node in populated_actions:
+					var action_button: Button = action_node as Button
+					if action_button != null:
+						var action_rect: Rect2 = action_button.get_global_rect()
+						var populated_card_rect: Rect2 = populated_card.get_global_rect()
+						_check(populated_card_rect.grow(-12.0).encloses(action_rect), "Populated BAG action remains within the card")
+						_check(action_rect.position.x >= populated_card_rect.end.x - 244.0, "Populated BAG action stays in the right-side action rail")
+			await _push_screen_drag(viewport, character.bag_scroll.get_global_rect().get_center(), character.bag_scroll.get_global_rect().get_center() - Vector2(0, 120))
+			_check(character.bag_scroll.scroll_vertical > bag_scroll_before, "Touch dragging the inventory list scrolls it vertically")
+			character.bag_scroll.scroll_vertical = 0
+			await _wait_frames(1)
 			var sort_button: Button = character.find_child("InventorySortButton", true, false) as Button
 			var sort_before: String = character.inventory_sort_mode
 			_check(sort_button != null, "Inventory exposes a stable sort button")
@@ -525,13 +580,18 @@ func _test_gacha_screen() -> void:
 			_check(not gacha.gacha_result_layer.visible, "A real tap closes the gacha result overlay")
 			var merge_inventory: Array = GameManager.get_inventory()
 			merge_inventory.append(EquipmentSystem.create_instance("leaf_cap", "ui_merge_1", 1, 1))
-			merge_inventory.append(EquipmentSystem.create_instance("leaf_cap", "ui_merge_2", 1, 1))
-			merge_inventory.append(EquipmentSystem.create_instance("leaf_cap", "ui_merge_3", 1, 1))
+			merge_inventory.append(EquipmentSystem.create_instance("leaf_cap", "ui_merge_2", 2, 1, EquipmentSystem.upgrade_coins_spent_for_level(2, "common")))
+			merge_inventory.append(EquipmentSystem.create_instance("leaf_cap", "ui_merge_3", 3, 1, EquipmentSystem.upgrade_coins_spent_for_level(3, "common")))
 			GameManager.player_state["inventory"] = merge_inventory
 			var merge_tab_button: Button = gacha.find_child("MergeTabButton", true, false) as Button
 			if merge_tab_button != null:
 				await _push_pointer_tap(viewport, merge_tab_button.get_global_rect().get_center())
 			_check(gacha.active_mode == "merge", "A real tap opens the MERGE mode")
+			await _wait_frames(2)
+			var merge_scroll_before: int = gacha.merge_scroll.scroll_vertical
+			_check(gacha.merge_scroll.get_v_scroll_bar().max_value > 0.0, "Merge list exposes vertical overflow for the available material groups")
+			await _push_screen_drag(viewport, gacha.merge_scroll.get_global_rect().get_center(), gacha.merge_scroll.get_global_rect().get_center() - Vector2(0, 120))
+			_check(gacha.merge_scroll.scroll_vertical > merge_scroll_before, "Touch dragging the merge list scrolls it vertically")
 			for uid: String in ["ui_merge_1", "ui_merge_2", "ui_merge_3"]:
 				var material_button: Button = gacha.find_child("MergeItem_%s" % uid, true, false) as Button
 				_check(material_button != null and not material_button.disabled, "Merge exposes an enabled material button for %s" % uid)

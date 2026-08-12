@@ -108,11 +108,44 @@ func get_gems() -> int:
 func get_stat_points() -> int:
 	return int(player_state.get("stat_points", 0))
 
+func get_total_stat_points() -> int:
+	# The fallback keeps saves created before the explicit total was added
+	# readable, and also keeps test/runtime state that is edited in memory safe.
+	var level_stat_points: int = maxi(0, (get_level() - GameBalance.BASE_LEVEL) * GameBalance.LEVEL_STAT_POINT_GAIN)
+	var stored_total: int = int(player_state.get("stat_points_total", 0))
+	return maxi(maxi(stored_total, level_stat_points), get_stat_points())
+
+func get_stat_points_spent() -> Dictionary:
+	var level: int = maxi(GameBalance.BASE_LEVEL, get_level())
+	var fallback: Dictionary = {
+		"attack": maxi(0, get_base_attack() - (GameBalance.BASE_ATTACK + ((level - GameBalance.BASE_LEVEL) * GameBalance.LEVEL_ATTACK_GAIN))),
+		"max_hp": maxi(0, int(floor(float(get_base_max_hp() - (GameBalance.BASE_MAX_HP + ((level - GameBalance.BASE_LEVEL) * GameBalance.LEVEL_HP_GAIN))) / 3.0))),
+		"defense": maxi(0, get_base_defense() - GameBalance.BASE_DEFENSE),
+		"luck": maxi(0, get_base_luck() - GameBalance.BASE_LUCK)
+	}
+	var raw_spent: Variant = player_state.get("stat_points_spent", {})
+	var result: Dictionary = {}
+	for stat: String in ["attack", "max_hp", "defense", "luck"]:
+		var value: int = int(fallback.get(stat, 0))
+		if raw_spent is Dictionary and raw_spent.has(stat):
+			value = maxi(0, int(raw_spent.get(stat, value)))
+		result[stat] = value
+	return result
+
 func get_required_exp() -> int:
 	return GameBalance.required_exp(get_level())
 
 func get_base_attack() -> int:
 	return int(player_state.get("base_attack", GameBalance.BASE_ATTACK))
+
+func get_base_max_hp() -> int:
+	return int(player_state.get("base_max_hp", GameBalance.BASE_MAX_HP))
+
+func get_base_defense() -> int:
+	return int(player_state.get("base_defense", GameBalance.BASE_DEFENSE))
+
+func get_base_luck() -> int:
+	return int(player_state.get("base_luck", GameBalance.BASE_LUCK))
 
 func get_equipped_stats() -> Dictionary:
 	return EquipmentSystem.aggregate_equipped_stats(player_state)
@@ -128,6 +161,43 @@ func get_defense() -> int:
 
 func get_luck() -> int:
 	return maxi(0, int(player_state.get("base_luck", GameBalance.BASE_LUCK)) + int(get_equipped_stats().get("luck", 0)))
+
+func get_stat_breakdown() -> Dictionary:
+	var spent: Dictionary = get_stat_points_spent()
+	var equipped: Dictionary = get_equipped_stats()
+	var level: int = maxi(GameBalance.BASE_LEVEL, get_level())
+	var level_attack: int = GameBalance.BASE_ATTACK + ((level - GameBalance.BASE_LEVEL) * GameBalance.LEVEL_ATTACK_GAIN)
+	var level_max_hp: int = GameBalance.BASE_MAX_HP + ((level - GameBalance.BASE_LEVEL) * GameBalance.LEVEL_HP_GAIN)
+	return {
+		"attack": {
+			"total": get_attack(),
+			"level": level_attack,
+			"allocated_points": int(spent.get("attack", 0)),
+			"allocated_value": int(spent.get("attack", 0)),
+			"equipment": int(equipped.get("attack", 0))
+		},
+		"max_hp": {
+			"total": get_max_hp(),
+			"level": level_max_hp,
+			"allocated_points": int(spent.get("max_hp", 0)),
+			"allocated_value": int(spent.get("max_hp", 0)) * 3,
+			"equipment": int(equipped.get("max_hp", 0))
+		},
+		"defense": {
+			"total": get_defense(),
+			"level": GameBalance.BASE_DEFENSE,
+			"allocated_points": int(spent.get("defense", 0)),
+			"allocated_value": int(spent.get("defense", 0)),
+			"equipment": int(equipped.get("defense", 0))
+		},
+		"luck": {
+			"total": get_luck(),
+			"level": GameBalance.BASE_LUCK,
+			"allocated_points": int(spent.get("luck", 0)),
+			"allocated_value": int(spent.get("luck", 0)),
+			"equipment": int(equipped.get("luck", 0))
+		}
+	}
 
 func get_exp_bonus() -> float:
 	return clampf(float(get_equipped_stats().get("exp_bonus", 0.0)), 0.0, 1.5)
@@ -341,6 +411,9 @@ func merge_equipment(item_uids: Array[String]) -> Dictionary:
 	)
 	if target_item.is_empty():
 		return {"success": false, "reason": "invalid_merge_target"}
+	var refund_coins: int = 0
+	for item: Dictionary in selected_items:
+		refund_coins += EquipmentSystem.get_upgrade_coins_spent(item)
 	var remove_indices: Array[int] = []
 	for uid: String in item_uids:
 		remove_indices.append(EquipmentSystem.find_item_index(inventory, uid))
@@ -350,6 +423,7 @@ func merge_equipment(item_uids: Array[String]) -> Dictionary:
 		inventory.remove_at(index)
 	inventory.append(target_item)
 	player_state["inventory"] = inventory
+	player_state["coins"] = get_coins() + refund_coins
 	player_state["next_item_uid"] = int(player_state.get("next_item_uid", 1)) + 1
 	_save_and_emit()
 	equipment_changed.emit()
@@ -357,6 +431,7 @@ func merge_equipment(item_uids: Array[String]) -> Dictionary:
 		"success": true,
 		"consumed_uids": item_uids.duplicate(),
 		"target_id": target_id,
+		"refund_coins": refund_coins,
 		"item": target_item.duplicate(true)
 	}
 
@@ -366,6 +441,10 @@ func get_current_progress_stage() -> int:
 func spend_stat_point(stat: String) -> bool:
 	if get_stat_points() <= 0:
 		return false
+	# Materialize the fallback total before consuming the last available point in
+	# an older/in-memory state that did not yet contain the new total field.
+	var total_stat_points: int = get_total_stat_points()
+	var spent: Dictionary = get_stat_points_spent()
 	match stat:
 		"attack":
 			player_state["base_attack"] = get_base_attack() + 1
@@ -377,6 +456,9 @@ func spend_stat_point(stat: String) -> bool:
 			player_state["base_luck"] = int(player_state.get("base_luck", GameBalance.BASE_LUCK)) + 1
 		_:
 			return false
+	spent[stat] = int(spent.get(stat, 0)) + 1
+	player_state["stat_points_spent"] = spent
+	player_state["stat_points_total"] = total_stat_points
 	player_state["stat_points"] = get_stat_points() - 1
 	_save_and_emit()
 	return true
@@ -431,13 +513,15 @@ func upgrade_item(uid: String) -> Dictionary:
 	var cost: int = EquipmentSystem.upgrade_cost(item)
 	if cost <= 0 or get_coins() < cost:
 		return {"success": false, "reason": "not_enough_coins", "cost": cost}
+	var spent_before: int = EquipmentSystem.get_upgrade_coins_spent(item)
 	player_state["coins"] = get_coins() - cost
 	item["level"] = int(item.get("level", 1)) + 1
+	item["upgrade_coins_spent"] = spent_before + cost
 	inventory[index] = item
 	player_state["inventory"] = inventory
 	_save_and_emit()
 	equipment_changed.emit()
-	return {"success": true, "cost": cost, "item": item.duplicate(true)}
+	return {"success": true, "cost": cost, "upgrade_coins_spent": int(item.get("upgrade_coins_spent", 0)), "item": item.duplicate(true)}
 
 func sell_item(uid: String) -> Dictionary:
 	var inventory: Array = get_inventory()
@@ -467,12 +551,14 @@ func commit_state() -> bool:
 func _apply_level_ups() -> int:
 	var levels_gained: int = 0
 	while get_exp() >= get_required_exp():
+		var total_stat_points_before_level: int = get_total_stat_points()
 		var required: int = get_required_exp()
 		player_state["exp"] = get_exp() - required
 		player_state["level"] = get_level() + 1
 		player_state["base_attack"] = get_base_attack() + GameBalance.LEVEL_ATTACK_GAIN
 		player_state["base_max_hp"] = int(player_state.get("base_max_hp", GameBalance.BASE_MAX_HP)) + GameBalance.LEVEL_HP_GAIN
 		player_state["stat_points"] = get_stat_points() + GameBalance.LEVEL_STAT_POINT_GAIN
+		player_state["stat_points_total"] = total_stat_points_before_level + GameBalance.LEVEL_STAT_POINT_GAIN
 		levels_gained += 1
 		if levels_gained >= 10_000:
 			push_warning("Stopped an excessive level-up loop from an invalid save value.")
