@@ -254,7 +254,6 @@ static func merge_target(template_id: String) -> String:
 static func validate_merge_items(items: Array, state: Dictionary) -> Dictionary:
 	if items.size() != 3:
 		return {"success": false, "reason": "requires_three_items"}
-	var equipped: Variant = state.get("equipped", {})
 	var first_template_id: String = ""
 	var first_rarity: String = ""
 	var seen_uids: Dictionary = {}
@@ -274,8 +273,6 @@ static func validate_merge_items(items: Array, state: Dictionary) -> Dictionary:
 			return {"success": false, "reason": "invalid_slot"}
 		if int(item.get("level", 1)) < 1:
 			return {"success": false, "reason": "invalid_level"}
-		if equipped is Dictionary and equipped.values().has(uid):
-			return {"success": false, "reason": "equipped_item"}
 		if first_template_id.is_empty():
 			first_template_id = template_id
 			first_rarity = str(template.get("rarity", "common"))
@@ -287,6 +284,168 @@ static func validate_merge_items(items: Array, state: Dictionary) -> Dictionary:
 	if target_id.is_empty():
 		return {"success": false, "reason": "max_rarity"}
 	return {"success": true, "template_id": first_template_id, "target_id": target_id}
+
+static func plan_auto_merge(inventory: Array, state: Dictionary) -> Dictionary:
+	## Builds a deterministic, side-effect-free chain of all currently possible
+	## merges. Internal fields are attached only to duplicated working items and
+	## never leave this helper in the returned persistent item data.
+	var working: Array = []
+	var seen_uids: Dictionary = {}
+	for raw_item: Variant in inventory:
+		if not raw_item is Dictionary:
+			continue
+		var item: Dictionary = (raw_item as Dictionary).duplicate(true)
+		var uid: String = str(item.get("uid", ""))
+		if uid.is_empty() or seen_uids.has(uid):
+			continue
+		seen_uids[uid] = true
+		item["_auto_created"] = false
+		item["_auto_equipped_slot"] = _equipped_slot(state, uid)
+		working.append(item)
+
+	var steps: Array = []
+	var consumed_uids: Array[String] = []
+	var consumed_seen: Dictionary = {}
+	var refund_coins: int = 0
+	var output_serial: int = 0
+	while true:
+		var candidate_templates: Array[String] = _auto_merge_candidate_templates(working)
+		if candidate_templates.is_empty():
+			break
+		candidate_templates.sort_custom(func(a: String, b: String) -> bool:
+			return _merge_template_precedes(a, b)
+		)
+		var source_template_id: String = candidate_templates[0]
+		var target_id: String = merge_target(source_template_id)
+		if target_id.is_empty():
+			break
+
+		var materials: Array = []
+		for raw_working_item: Variant in working:
+			if raw_working_item is Dictionary and str((raw_working_item as Dictionary).get("template_id", "")) == source_template_id:
+				materials.append((raw_working_item as Dictionary))
+		materials.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			var a_equipped: bool = not str(a.get("_auto_equipped_slot", "")).is_empty()
+			var b_equipped: bool = not str(b.get("_auto_equipped_slot", "")).is_empty()
+			if a_equipped != b_equipped:
+				return not a_equipped
+			var a_level: int = int(a.get("level", 1))
+			var b_level: int = int(b.get("level", 1))
+			if a_level != b_level:
+				return a_level < b_level
+			return str(a.get("uid", "")) < str(b.get("uid", ""))
+		)
+		if materials.size() < 3:
+			break
+		var selected: Array = materials.slice(0, 3)
+		var selected_tokens: Dictionary = {}
+		var material_uids: Array[String] = []
+		var equipped_slot: String = ""
+		var step_refund: int = 0
+		for raw_selected_item: Variant in selected:
+			var selected_item: Dictionary = raw_selected_item as Dictionary
+			var selected_uid: String = str(selected_item.get("uid", ""))
+			selected_tokens[selected_uid] = true
+			material_uids.append(selected_uid)
+			var selected_equipped_slot: String = str(selected_item.get("_auto_equipped_slot", ""))
+			if equipped_slot.is_empty() and not selected_equipped_slot.is_empty():
+				equipped_slot = selected_equipped_slot
+			if not bool(selected_item.get("_auto_created", false)):
+				if not consumed_seen.has(selected_uid):
+					consumed_seen[selected_uid] = true
+					consumed_uids.append(selected_uid)
+				step_refund += get_upgrade_coins_spent(selected_item)
+		refund_coins += step_refund
+
+		var remaining: Array = []
+		for raw_working_item: Variant in working:
+			if raw_working_item is Dictionary and not selected_tokens.has(str((raw_working_item as Dictionary).get("uid", ""))):
+				remaining.append(raw_working_item)
+		working = remaining
+
+		var output_token: String = "__auto_output_%d" % output_serial
+		output_serial += 1
+		var output_item: Dictionary = create_instance(target_id, output_token, 1, 0)
+		if output_item.is_empty():
+			break
+		output_item["_auto_created"] = true
+		output_item["_auto_equipped_slot"] = equipped_slot
+		working.append(output_item)
+		steps.append({
+			"step_index": steps.size() + 1,
+			"source_template_id": source_template_id,
+			"target_id": target_id,
+			"material_uids": material_uids,
+			"output_token": output_token,
+			"equipped_slot": equipped_slot,
+			"refund_coins": step_refund
+		})
+
+	var final_outputs: Array = []
+	var equipped_replacements: Dictionary = {}
+	for raw_working_item: Variant in working:
+		if not raw_working_item is Dictionary or not bool((raw_working_item as Dictionary).get("_auto_created", false)):
+			continue
+		var final_item: Dictionary = raw_working_item as Dictionary
+		var final_token: String = str(final_item.get("uid", ""))
+		var final_slot: String = str(final_item.get("_auto_equipped_slot", ""))
+		final_outputs.append({
+			"output_token": final_token,
+			"template_id": str(final_item.get("template_id", "")),
+			"equipped_slot": final_slot
+		})
+		if not final_slot.is_empty():
+			equipped_replacements[final_slot] = final_token
+
+	return {
+		"success": true,
+		"has_plan": not steps.is_empty(),
+		"steps": steps,
+		"consumed_uids": consumed_uids,
+		"final_outputs": final_outputs,
+		"equipped_replacements": equipped_replacements,
+		"refund_coins": refund_coins,
+		"merge_count": steps.size(),
+		"consumed_count": consumed_uids.size(),
+		"output_count": final_outputs.size()
+	}
+
+static func _auto_merge_candidate_templates(working: Array) -> Array[String]:
+	var counts: Dictionary = {}
+	for raw_item: Variant in working:
+		if not raw_item is Dictionary:
+			continue
+		var template_id: String = str((raw_item as Dictionary).get("template_id", ""))
+		if merge_target(template_id).is_empty():
+			continue
+		counts[template_id] = int(counts.get(template_id, 0)) + 1
+	var result: Array[String] = []
+	for raw_template_id: Variant in counts.keys():
+		if int(counts[raw_template_id]) >= 3:
+			result.append(str(raw_template_id))
+	return result
+
+static func _merge_template_precedes(a: String, b: String) -> bool:
+	var a_template: Dictionary = DataManager.get_equipment(a)
+	var b_template: Dictionary = DataManager.get_equipment(b)
+	var a_rarity: int = RARITY_ORDER.find(str(a_template.get("rarity", "common")))
+	var b_rarity: int = RARITY_ORDER.find(str(b_template.get("rarity", "common")))
+	if a_rarity != b_rarity:
+		return a_rarity < b_rarity
+	var a_slot: int = SLOTS.find(str(a_template.get("slot", "weapon")))
+	var b_slot: int = SLOTS.find(str(b_template.get("slot", "weapon")))
+	if a_slot != b_slot:
+		return a_slot < b_slot
+	return a < b
+
+static func _equipped_slot(state: Dictionary, uid: String) -> String:
+	var equipped: Variant = state.get("equipped", {})
+	if not equipped is Dictionary:
+		return ""
+	for slot: String in SLOTS:
+		if str((equipped as Dictionary).get(slot, "")) == uid:
+			return slot
+	return ""
 
 static func _templates_for_drop(stage_id: int, rarity: String) -> Array:
 	var result: Array = []

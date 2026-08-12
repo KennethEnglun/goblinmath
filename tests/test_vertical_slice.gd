@@ -38,6 +38,8 @@ func _test_assets_and_authored_data() -> void:
 		"res://assets/ui/start/start_logo_v2.png",
 		"res://assets/ui/start/goblin_start_v2.png",
 		"res://assets/ui/start/start_adventure_button_v2.png",
+		"res://assets/fonts/ChironGoRoundTC-500M.woff2",
+		"res://assets/fonts/ChironGoRoundTC-700B.woff2",
 		"res://assets/ui/battle/battle_flower_meadow_bg_v1.png",
 		"res://assets/ui/battle/battle_sakura_woods_bg_v1.png",
 		"res://assets/ui/battle/battle_starlight_hill_bg_v1.png",
@@ -84,6 +86,7 @@ func _test_assets_and_authored_data() -> void:
 		"res://assets/ui/gacha/gacha_ad_lock_badge_v1.png"
 	]:
 		_check(ResourceLoader.exists(asset_path), "Asset imports: %s" % asset_path)
+	_check(FileAccess.file_exists("res://assets/fonts/ChironGoRoundTC-OFL.txt"), "Rounded font license is bundled with the game")
 
 	var chapter_one: Array = DataManager.get_stages_for_chapter(1)
 	_check(chapter_one.size() == 10, "Chapter 1 contains ten authored stages")
@@ -469,6 +472,49 @@ func _test_gacha_system() -> void:
 	_check(int(merge_result.get("refund_coins", 0)) == expected_refund and GameManager.get_coins() == coins_before_merge + expected_refund, "Merging refunds all recorded strengthening coins")
 
 	GameManager.player_state = SaveManager.create_new_save()
+	var equipped_merge_inventory: Array = [
+		EquipmentSystem.create_instance("leaf_cap", "equipped_merge_1", 1, 1),
+		EquipmentSystem.create_instance("leaf_cap", "equipped_merge_2", 1, 1),
+		EquipmentSystem.create_instance("leaf_cap", "equipped_merge_3", 1, 1)
+	]
+	GameManager.player_state["inventory"] = equipped_merge_inventory
+	GameManager.player_state["equipped"] = {"weapon": "", "head": "equipped_merge_1", "body": ""}
+	GameManager.player_state["next_item_uid"] = 1
+	var equipped_merge_validation: Dictionary = GachaSystem.validate_merge(equipped_merge_inventory, GameManager.player_state)
+	_check(bool(equipped_merge_validation.get("success", false)), "Equipped equipment is accepted as a merge material")
+	var equipped_merge_result: Dictionary = GameManager.merge_equipment(["equipped_merge_1", "equipped_merge_2", "equipped_merge_3"])
+	var equipped_merge_item: Dictionary = equipped_merge_result.get("item", {})
+	_check(bool(equipped_merge_result.get("success", false)) and str(GameManager.get_equipped_uid("head")) == str(equipped_merge_item.get("uid", "")), "Manual merge replaces a consumed equipped slot with the new item")
+
+	GameManager.player_state = SaveManager.create_new_save()
+	var chain_inventory: Array = GameManager.get_inventory()
+	for index: int in range(2, 10):
+		var chain_level: int = 2 if index == 2 else (3 if index == 3 else 1)
+		var chain_spent: int = EquipmentSystem.upgrade_coins_spent_for_level(chain_level, "common")
+		chain_inventory.append(EquipmentSystem.create_instance("twig_club", "chain_%d" % index, chain_level, 1, chain_spent))
+	chain_inventory[0]["uid"] = "chain_1"
+	GameManager.player_state["inventory"] = chain_inventory
+	GameManager.player_state["equipped"] = {"weapon": "chain_1", "head": "", "body": ""}
+	GameManager.player_state["next_item_uid"] = 1
+	var chain_coins_before: int = GameManager.get_coins()
+	var chain_plan: Dictionary = GameManager.preview_auto_merge()
+	_check(bool(chain_plan.get("has_plan", false)) and int(chain_plan.get("merge_count", 0)) == 4 and int(chain_plan.get("consumed_count", 0)) == 9, "Auto merge plans a complete three-to-one chain and consumes only original materials")
+	_check(str((chain_plan.get("equipped_replacements", {}) as Dictionary).get("weapon", "")).begins_with("__auto_output_"), "Auto merge carries equipped status through intermediate outputs")
+	var chain_expected_refund: int = EquipmentSystem.upgrade_coins_spent_for_level(2, "common") + EquipmentSystem.upgrade_coins_spent_for_level(3, "common")
+	var chain_result: Dictionary = GameManager.auto_merge_equipment()
+	var chain_output: Dictionary = {}
+	for raw_item: Variant in GameManager.get_inventory():
+		if raw_item is Dictionary and str(raw_item.get("template_id", "")) == "star_hammer":
+			chain_output = raw_item
+	_check(bool(chain_result.get("success", false)) and not chain_output.is_empty() and GameManager.get_inventory().size() == 1, "Auto merge stores the final chained equipment and removes intermediate materials")
+	_check(str(GameManager.get_equipped_uid("weapon")) == str(chain_output.get("uid", "")) and int(chain_result.get("refund_coins", 0)) == chain_expected_refund and GameManager.get_coins() == chain_coins_before + chain_expected_refund, "Auto merge equips the final result and refunds original strengthening coins once")
+	GameManager.player_state = SaveManager.create_new_save()
+	var no_merge_snapshot: Dictionary = GameManager.player_state.duplicate(true)
+	var no_merge_plan: Dictionary = GameManager.preview_auto_merge()
+	var no_merge_result: Dictionary = GameManager.auto_merge_equipment()
+	_check(not bool(no_merge_plan.get("has_plan", false)) and not bool(no_merge_result.get("success", false)) and GameManager.player_state == no_merge_snapshot, "Auto merge with insufficient materials leaves state untouched")
+
+	GameManager.player_state = SaveManager.create_new_save()
 	var legendary_inventory: Array = GameManager.get_inventory()
 	for index: int in range(3):
 		legendary_inventory.append(EquipmentSystem.create_instance("crown_staff", "item_%d" % (index + 2), 1, 10))
@@ -495,8 +541,8 @@ func _test_gacha_system() -> void:
 func _test_project_settings() -> void:
 	var features: PackedStringArray = ProjectSettings.get_setting("application/config/features", PackedStringArray())
 	_check(str(ProjectSettings.get_setting("application/config/name", "")) == "哥布林升級中", "Project display name matches the game identity")
-	_check(ResourceLoader.exists(UITheme.CJK_FONT_PATH), "Traditional Chinese font is bundled for cross-platform UI")
-	_check(UITheme.shared_font() != null, "Traditional Chinese font loads as a Godot Font resource")
+	_check(ResourceLoader.exists(UITheme.BODY_FONT_PATH) and ResourceLoader.exists(UITheme.BOLD_FONT_PATH), "Rounded Traditional Chinese font weights are bundled for cross-platform UI")
+	_check(UITheme.shared_font(UITheme.FontRole.BODY) != null and UITheme.shared_font(UITheme.FontRole.BOLD) != null, "Rounded Traditional Chinese font weights load as Godot Font resources")
 	var safe_area_probe: Control = Control.new()
 	get_tree().root.add_child(safe_area_probe)
 	var safe_insets: Vector4 = UITheme.safe_area_insets(safe_area_probe)

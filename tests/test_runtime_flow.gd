@@ -127,6 +127,7 @@ func _test_world_map(unlocked_stage: int) -> void:
 		var home: Control = hud.find_child("HomeButton", true, false) as Control
 		var character: Control = hud.find_child("CharacterButton", true, false) as Control
 		_check(header != null and bottom_hud != null and not header.get_global_rect().intersects(bottom_hud.get_global_rect()), "Fixed header and bottom controls do not overlap")
+		_check(_uses_chiron_font(map_title), "World map dynamic title uses the bundled rounded CJK font")
 		_check(world_name != null and str(world_name.text).contains("花漾原野"), "Map HUD displays the World 1 name")
 		_check(map_title != null and world_name != null and not map_title.get_global_rect().intersects(world_name.get_global_rect()), "Map title and world name keep a readable vertical gap (%s / %s)" % [map_title.get_global_rect(), world_name.get_global_rect()])
 		_check(world_name != null and world_map.stats_label != null and not world_name.get_global_rect().intersects(world_map.stats_label.get_global_rect()), "World name and progress stats do not overlap")
@@ -235,10 +236,17 @@ func _test_character_screen() -> void:
 		viewport.add_child(character)
 		await _wait_frames(5)
 		_check(character.find_child("BackToMapButton", true, false) != null, "Character screen can return to the map at %s" % viewport_size)
+		var merge_entry_button: Button = character.find_child("MergeButton", true, false) as Button
+		var gacha_entry_button: Button = character.find_child("GachaButton", true, false) as Button
+		var character_coin_badge: Control = character.find_child("CoinBadge", true, false) as Control
+		_check(merge_entry_button != null and merge_entry_button.pressed.is_connected(Callable(character, "_on_merge_pressed")), "Character screen exposes a wired MERGE shortcut")
+		_check(gacha_entry_button != null and character_coin_badge != null and merge_entry_button != null and not gacha_entry_button.get_global_rect().intersects(merge_entry_button.get_global_rect()) and not merge_entry_button.get_global_rect().intersects(character_coin_badge.get_global_rect()), "Character header shortcuts and currency badge do not overlap")
 		for layer_name: String in ["CharacterBackgroundLayer", "CharacterAmbientLayer", "CharacterGoblinLayer", "CharacterPanelLayer", "CharacterEquipmentLayer", "CharacterHudLayer", "CharacterTabLayer", "CharacterActionLayer", "CharacterToastLayer"]:
 			_check(character.find_child(layer_name, true, false) != null, "Character screen exposes independent %s" % layer_name)
 		_check(character.find_child("CharacterBackgroundFallback", true, false) != null or character.character_background_layer.texture != null, "Character screen keeps a background fallback when art is unavailable")
 		_check(character.character_ambient_layer.texture != null, "Character screen reuses the shared ambient effect layer")
+		if merge_entry_button != null:
+			_check(merge_entry_button.custom_minimum_size.x >= 96.0 and merge_entry_button.custom_minimum_size.y >= 96.0, "Character MERGE shortcut keeps a touch-safe target")
 		for asset_path: String in [
 			"res://assets/ui/character/character_upgrade_bg_v1.png",
 			"res://assets/ui/character/character_panel_skin_v1.png",
@@ -247,6 +255,20 @@ func _test_character_screen() -> void:
 			"res://assets/ui/character/character_slot_frame_v1.png",
 			"res://assets/ui/character/character_slot_empty_v1.png",
 			"res://assets/ui/character/character_coin_badge_v1.png",
+			"res://assets/ui/character/icons/character_icon_map_v1.png",
+			"res://assets/ui/character/icons/character_icon_gacha_v1.png",
+			"res://assets/ui/character/icons/character_icon_merge_v1.png",
+			"res://assets/ui/character/icons/character_icon_profile_v1.png",
+			"res://assets/ui/character/icons/character_icon_equipment_v1.png",
+			"res://assets/ui/character/icons/character_icon_bag_v1.png",
+			"res://assets/ui/character/icons/character_icon_equip_v1.png",
+			"res://assets/ui/character/icons/character_icon_upgrade_v1.png",
+			"res://assets/ui/character/icons/character_icon_sell_v1.png",
+			"res://assets/ui/character/icons/character_icon_sort_v1.png",
+			"res://assets/ui/character/icons/character_icon_attack_v1.png",
+			"res://assets/ui/character/icons/character_icon_health_v1.png",
+			"res://assets/ui/character/icons/character_icon_defense_v1.png",
+			"res://assets/ui/character/icons/character_icon_luck_v1.png",
 			"res://assets/equipment/icons/equipment_weapon_v1.png",
 			"res://assets/equipment/icons/equipment_head_v1.png",
 			"res://assets/equipment/icons/equipment_body_v1.png"
@@ -254,7 +276,7 @@ func _test_character_screen() -> void:
 			_check(ResourceLoader.exists(asset_path), "Character asset imports: %s" % asset_path.get_file())
 		_check(character.active_tab == "profile", "Character screen opens on PROFILE")
 		var character_font: Font = character.level_label.get_theme_font("font")
-		_check(character_font != null and character_font.resource_path.contains("NotoSansCJKtc"), "Character dynamic labels use the bundled CJK font")
+		_check(character_font != null and character_font.resource_path.contains("ChironGoRoundTC"), "Character dynamic labels use the bundled rounded CJK font")
 		_check(character.profile_scroll.visible and not character.equipment_scroll.visible and not character.bag_scroll.visible, "PROFILE is the only visible tab at startup")
 		var starter_art: TextureRect = character.find_child("EquipmentArtSprite", true, false) as TextureRect
 		_check(starter_art != null and starter_art.texture != null and starter_art.texture.resource_path.ends_with("twig_club_v1.png"), "Character equipment UI uses the template-specific starter art")
@@ -288,17 +310,17 @@ func _test_character_screen() -> void:
 				var capacity_rect: Rect2 = capacity_panel.get_global_rect()
 				var items_rect: Rect2 = items_label.get_global_rect()
 				var header_sort_rect: Rect2 = header_sort_button.get_global_rect()
-				_check(header_rect.size.y >= 128.0 and header_rect.encloses(capacity_rect) and header_rect.encloses(items_rect) and header_rect.encloses(header_sort_rect), "BAG header content stays inside its translucent backing panel")
+				_check(header_rect.size.y >= 120.0 and header_rect.encloses(capacity_rect) and header_rect.encloses(items_rect) and header_rect.encloses(header_sort_rect), "BAG header content stays inside its translucent backing panel")
 				_check(not capacity_rect.intersects(items_rect) and not items_rect.intersects(header_sort_rect), "BAG capacity, ITEMS, and SORT keep separate readable zones")
 			var starter_card: Control = inventory_list.get_child(0) as Control
 			var starter_sprite: TextureRect = starter_card.find_child("EquipmentArtSprite", true, false) as TextureRect if starter_card != null else null
 			var starter_icon: Control = starter_sprite.get_parent() as Control if starter_sprite != null else null
 			var starter_buttons: Array[Node] = starter_card.find_children("*", "Button", true, false) if starter_card != null else []
-			_check(starter_icon != null and starter_icon.size == Vector2(252, 252), "BAG item artwork frame scales to the requested 2x size")
+			_check(starter_icon != null and starter_icon.size == Vector2(196, 196), "BAG item artwork uses the compact production card size")
 			if starter_card != null and starter_icon != null:
 				var starter_card_rect: Rect2 = starter_card.get_global_rect()
 				var starter_icon_rect: Rect2 = starter_icon.get_global_rect()
-				_check(starter_icon_rect.position.x >= starter_card_rect.position.x + 48.0 and starter_card_rect.grow(-12.0).encloses(starter_icon_rect), "BAG item artwork moves right and remains inside the card")
+				_check(starter_icon_rect.position.x >= starter_card_rect.position.x + 32.0 and starter_card_rect.grow(-12.0).encloses(starter_icon_rect), "BAG item artwork keeps a safe inset and remains inside the card")
 			for action_node: Node in starter_buttons:
 				var action_button: Button = action_node as Button
 				if action_button != null:
@@ -330,8 +352,9 @@ func _test_character_screen() -> void:
 			if stat_button != null:
 				await _push_pointer_tap(viewport, stat_button.get_global_rect().get_center())
 			_check(GameManager.get_base_attack() == attack_before + 1 and GameManager.get_stat_points() == 0, "Character screen allocates a stat point")
-			_check(GameManager.get_total_stat_points() == 1 and str(character.points_label.text).contains("總能力點數：1"), "Character screen keeps showing the total stat points after allocation")
-			_check(str(character.stats_label.text).contains("能力總值") and str(character.stats_label.text).contains("ATK 14") and str(character.stats_label.text).contains("加點 1"), "Character screen shows each final stat with its allocation breakdown")
+			_check(GameManager.get_total_stat_points() == 1 and str(character.points_label.text).contains("累計獲得 1 點"), "Character screen keeps showing the total stat points after allocation")
+			var attack_summary: Label = character.find_child("ProfileStatValue_attack", true, false) as Label
+			_check(attack_summary != null and str(attack_summary.text).contains("攻擊 14") and str(attack_summary.text).contains("加點 1"), "Character screen shows each final stat with its allocation breakdown")
 			var inventory: Array = GameManager.get_inventory()
 			inventory.append(EquipmentSystem.create_instance("leaf_cap", "item_2", 1, 1))
 			inventory.append(EquipmentSystem.create_instance("traveler_shorts", "item_3", 1, 1))
@@ -351,7 +374,7 @@ func _test_character_screen() -> void:
 				var populated_sprite: TextureRect = populated_card.find_child("EquipmentArtSprite", true, false) as TextureRect
 				var populated_icon: Control = populated_sprite.get_parent() as Control if populated_sprite != null else null
 				var populated_actions: Array[Node] = populated_card.find_children("*", "Button", true, false)
-				_check(populated_icon != null and populated_icon.size == Vector2(252, 252), "Populated BAG cards keep the enlarged item artwork")
+				_check(populated_icon != null and populated_icon.size == Vector2(196, 196), "Populated BAG cards keep the compact production artwork")
 				if populated_icon != null:
 					_check(populated_card.get_global_rect().grow(-12.0).encloses(populated_icon.get_global_rect()), "Populated BAG artwork remains within the card")
 				for action_node: Node in populated_actions:
@@ -528,6 +551,7 @@ func _test_battle_zone_backgrounds() -> void:
 		var battle: Control = await _spawn_battle()
 		var background_texture: Texture2D = battle.battle_background_layer.texture as Texture2D
 		_check(background_texture != null and background_texture.resource_path.ends_with(str(entry[1])), "Stage %d selects its zone battle background" % int(entry[0]))
+		_check(_uses_chiron_font(battle.question_label), "Battle question uses the bundled rounded font")
 		battle.queue_free()
 		await _wait_frames(1)
 
@@ -542,12 +566,23 @@ func _test_gacha_screen() -> void:
 		var gacha: Control = gacha_scene.instantiate() as Control
 		viewport.add_child(gacha)
 		await _wait_frames(5)
-		for layer_name: String in ["GachaBackgroundLayer", "GachaAmbientLayer", "GachaSummonLayer", "GachaPanelLayer", "GachaResultLayer", "GachaMergeLayer", "GachaHudLayer", "GachaActionLayer", "GachaToastLayer"]:
+		var gacha_title_primary: Label = gacha.gacha_title.get_child(0) as Label if gacha.gacha_title != null else null
+		_check(_uses_chiron_font(gacha_title_primary), "Gacha dynamic title uses the bundled rounded font")
+		for layer_name: String in ["GachaBackgroundLayer", "GachaAmbientLayer", "GachaSummonLayer", "GachaPanelLayer", "GachaResultLayer", "GachaMergeLayer", "GachaAutoMergeLayer", "GachaHudLayer", "GachaActionLayer", "GachaToastLayer"]:
 			_check(gacha.find_child(layer_name, true, false) != null, "Gacha screen exposes independent %s" % layer_name)
+		_check(gacha.find_child("AutoMergeButton", true, false) != null and gacha.find_child("CancelAutoMergeButton", true, false) != null and gacha.find_child("ConfirmAutoMergeButton", true, false) != null, "Gacha exposes automatic merge and preview actions")
 		_check(gacha.find_child("BackToMapButton", true, false) != null, "Gacha screen can return to the map")
 		_check(gacha.find_child("GachaBackgroundFallback", true, false) != null or gacha.find_child("GachaBackground", true, false) != null, "Gacha keeps a background fallback")
-		_check(gacha.find_child("WatchAdButton", true, false) != null and (gacha.find_child("WatchAdButton", true, false) as Button).disabled, "Watch Ad remains a locked non-rewarding hook")
+		var watch_ad_button: Button = gacha.find_child("WatchAdButton", true, false) as Button
+		_check(watch_ad_button != null and watch_ad_button.disabled, "Watch Ad stays unavailable off native AdMob runtime")
+		_check(watch_ad_button != null and watch_ad_button.pressed.is_connected(Callable(gacha, "_on_watch_ad_pressed")), "Watch Ad is wired to the rewarded-ad request path")
 		_check(gacha.find_child("DiamondIcon", true, false) != null and gacha.find_child("AdLockBadge", true, false) != null, "Gacha HUD and locked ad action use independent icon layers")
+		var rewarded_ad_service: Node = get_node_or_null("/root/RewardedAdService") as Node
+		if not OS.has_feature("ios") and rewarded_ad_service != null:
+			var gems_before_ad_hook: int = GameManager.get_gems()
+			_check(not bool(rewarded_ad_service.call("is_available")), "Desktop/Web rewarded ads remain unavailable")
+			_check(not bool(rewarded_ad_service.call("request_reward")), "Desktop/Web rewarded ad request cannot mint a reward")
+			_check(GameManager.get_gems() == gems_before_ad_hook, "Unavailable rewarded ad request does not change gems")
 		var legendary_icon: Panel = gacha._make_item_icon("rainbow_star_staff", "weapon", Vector2(96, 96), "legendary")
 		var legendary_sprite: TextureRect = legendary_icon.find_child("EquipmentArtSprite", true, false) as TextureRect
 		_check(legendary_sprite != null and legendary_sprite.texture != null and legendary_sprite.texture.resource_path.ends_with("rainbow_star_staff_v2.png"), "Gacha result/merge icon resolves the Legendary template art")
@@ -557,6 +592,7 @@ func _test_gacha_screen() -> void:
 		var state_before_mode: Dictionary = GameManager.player_state.duplicate(true)
 		gacha._set_mode("merge")
 		_check(gacha.merge_panel.visible and not gacha.summon_panel.visible and gacha.merge_button.visible, "Gacha MERGE mode switches its independent content layer")
+		_check(str((gacha.find_child("GachaTitle", true, false).get_child(1) as Label).text) == "合成", "Gacha title changes to 合成 in MERGE mode")
 		_check(gacha.merge_panel.position.y <= 330.0 and gacha.merge_panel.size.y >= 1100.0, "Gacha merge panel uses the reference portrait proportions")
 		_check(gacha.find_child("MergeTitleDivider", true, false) != null and gacha.find_child("MergeActionMedallion", true, false) != null, "Gacha merge screen keeps independent generated ornament layers")
 		_check(gacha.find_child("LeftSakuraOrnament", true, false) != null and gacha.find_child("RightSakuraOrnament", true, false) != null, "Gacha tabs expose independent corner flower layers")
@@ -582,7 +618,11 @@ func _test_gacha_screen() -> void:
 			merge_inventory.append(EquipmentSystem.create_instance("leaf_cap", "ui_merge_1", 1, 1))
 			merge_inventory.append(EquipmentSystem.create_instance("leaf_cap", "ui_merge_2", 2, 1, EquipmentSystem.upgrade_coins_spent_for_level(2, "common")))
 			merge_inventory.append(EquipmentSystem.create_instance("leaf_cap", "ui_merge_3", 3, 1, EquipmentSystem.upgrade_coins_spent_for_level(3, "common")))
+			for index: int in range(1, 4):
+				merge_inventory.append(EquipmentSystem.create_instance("traveler_shorts", "ui_scroll_%d" % index, 1, 1))
 			GameManager.player_state["inventory"] = merge_inventory
+			GameManager.player_state["equipped"] = {"weapon": "item_1", "head": "ui_merge_1", "body": ""}
+			GameManager.player_state["next_item_uid"] = 5
 			var merge_tab_button: Button = gacha.find_child("MergeTabButton", true, false) as Button
 			if merge_tab_button != null:
 				await _push_pointer_tap(viewport, merge_tab_button.get_global_rect().get_center())
@@ -607,8 +647,53 @@ func _test_gacha_screen() -> void:
 				if raw_item is Dictionary and str(raw_item.get("template_id", "")) == "sakura_ribbon":
 					has_merged_head = true
 			_check(has_merged_head, "Merge UI consumes three materials and stores the next-tier equipment")
+
+			var auto_inventory: Array = []
+			for index: int in range(1, 10):
+				auto_inventory.append(EquipmentSystem.create_instance("twig_club", "auto_ui_%d" % index, 1, 1))
+			GameManager.player_state["inventory"] = auto_inventory
+			GameManager.player_state["equipped"] = {"weapon": "auto_ui_1", "head": "", "body": ""}
+			GameManager.player_state["next_item_uid"] = 1
+			gacha._refresh()
+			gacha._set_mode("merge")
+			var auto_merge_button: Button = gacha.find_child("AutoMergeButton", true, false) as Button
+			_check(auto_merge_button != null and not auto_merge_button.disabled, "Auto merge is enabled when a complete chain is available")
+			if auto_merge_button != null and not auto_merge_button.disabled:
+				await _push_pointer_tap(viewport, auto_merge_button.get_global_rect().get_center())
+			_check(gacha.gacha_auto_merge_layer.visible and gacha.find_child("AutoMergePreviewSummary", true, false) != null, "Auto merge opens a preview without changing the inventory")
+			var cancel_auto_button: Button = gacha.find_child("CancelAutoMergeButton", true, false) as Button
+			if cancel_auto_button != null:
+				await _push_pointer_tap(viewport, cancel_auto_button.get_global_rect().get_center())
+			_check(not gacha.gacha_auto_merge_layer.visible and GameManager.get_inventory().size() == 9, "Cancelling the auto merge preview leaves state unchanged")
+			if auto_merge_button != null and not auto_merge_button.disabled:
+				await _push_pointer_tap(viewport, auto_merge_button.get_global_rect().get_center())
+			var confirm_auto_button: Button = gacha.find_child("ConfirmAutoMergeButton", true, false) as Button
+			if confirm_auto_button != null:
+				await _push_pointer_tap(viewport, confirm_auto_button.get_global_rect().get_center())
+			var has_auto_star_hammer: bool = false
+			for raw_item: Variant in GameManager.get_inventory():
+				if raw_item is Dictionary and str(raw_item.get("template_id", "")) == "star_hammer":
+					has_auto_star_hammer = true
+			_check(has_auto_star_hammer and str(GameManager.get_equipped_uid("weapon")) != "", "Confirming auto merge updates inventory and keeps the equipped slot populated")
 		viewport.queue_free()
 		await _wait_frames(1)
+
+	GameManager.player_state = SaveManager.create_new_save()
+	var previous_transition_busy: bool = GameManager.transition_busy
+	GameManager.transition_busy = true
+	GameManager.go_to_gacha("merge", "character")
+	GameManager.transition_busy = previous_transition_busy
+	var context_viewport: SubViewport = SubViewport.new()
+	context_viewport.name = "GachaContextViewport"
+	context_viewport.size = Vector2i(1080, 1920)
+	get_tree().root.add_child(context_viewport)
+	var context_gacha: Control = gacha_scene.instantiate() as Control
+	context_viewport.add_child(context_gacha)
+	await _wait_frames(5)
+	_check(context_gacha.active_mode == "merge" and context_gacha.return_scene == "character", "Character merge navigation opens MERGE mode with a character return context")
+	_check(context_gacha.find_child("BackToMapButton", true, false).pressed.is_connected(Callable(context_gacha, "_on_back_pressed")), "Merge page keeps a wired context-aware back action")
+	context_viewport.queue_free()
+	await _wait_frames(1)
 
 func _test_real_battle_loop() -> void:
 	GameManager.player_state = SaveManager.create_new_save()
@@ -665,9 +750,11 @@ func _test_start_screen(viewport_size: Vector2i, test_button: bool) -> void:
 		var effects: TextureRect = stage.get_node_or_null("EffectsLayer") as TextureRect
 		var logo: TextureRect = stage.get_node_or_null("LogoLayer") as TextureRect
 		var goblin: TextureRect = stage.get_node_or_null("GoblinLayer") as TextureRect
-		var button: TextureButton = stage.get_node_or_null("StartAdventureButton") as TextureButton
+		var button: Button = stage.get_node_or_null("StartAdventureButton") as Button
 		_check(effects != null and logo != null and goblin != null and button != null, "Start screen keeps all independent layers")
 		if logo != null and goblin != null and button != null:
+			var start_copy: Label = button.find_child("PrimaryLabel", true, false) as Label
+			_check(_uses_chiron_font(start_copy), "Start screen action copy uses the bundled rounded CJK font")
 			_check(not logo.get_rect().intersects(goblin.get_rect()), "Logo and goblin do not overlap at %s" % viewport_size)
 			_check(not goblin.get_rect().intersects(button.get_rect()), "Goblin and button do not overlap at %s" % viewport_size)
 			_check(button.size.x >= 280.0 and button.size.y >= 100.0, "Start button keeps a large touch target at %s" % viewport_size)
@@ -681,6 +768,12 @@ func _test_start_screen(viewport_size: Vector2i, test_button: bool) -> void:
 func _wait_frames(frame_count: int) -> void:
 	for index: int in range(frame_count):
 		await get_tree().process_frame
+
+func _uses_chiron_font(control: Control) -> bool:
+	if control == null:
+		return false
+	var font: Font = control.get_theme_font("font")
+	return font != null and font.resource_path.contains("ChironGoRoundTC")
 
 func _push_pointer_tap(viewport: Viewport, at: Vector2) -> void:
 	var motion: InputEventMouseMotion = InputEventMouseMotion.new()

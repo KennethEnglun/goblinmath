@@ -1,6 +1,6 @@
 extends Node
 
-## Headless visual QA capture for the authored portrait screens.
+## Visual QA capture for the authored portrait screens.
 ## Writes only to /private/tmp and uses an isolated save path.
 const OUTPUT_DIR: String = "/private/tmp/candymaths-visual"
 const DESIGN_SIZE: Vector2i = Vector2i(1080, 1920)
@@ -18,6 +18,11 @@ func _init() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	if DisplayServer.get_name() == "headless":
+		push_warning("Visual capture requires a rendering backend; headless dummy mode completed without pixel output.")
+		print("VISUAL_CAPTURE_HEADLESS_SKIP")
+		get_tree().quit()
+		return
 	DirAccess.make_dir_recursive_absolute(OUTPUT_DIR)
 	var original_save_path: String = SaveManager.storage_path
 	SaveManager.storage_path = "/private/tmp/candymaths_visual_capture_%d.json" % OS.get_process_id()
@@ -78,13 +83,17 @@ func _capture_scene(file_stem: String, viewport_size: Vector2i, scene_key: Strin
 	await _wait_frames(8)
 	if key == "character":
 		scene.set_active_tab(mode)
-		await _wait_frames(3)
+		await _wait_frames(30)
 	if key == "gacha":
 		if mode != "result":
 			scene._set_mode(mode)
 		else:
 			scene._on_single_pull_pressed()
 		await _wait_frames(3)
+	# Keep the target live for two additional process frames. Switching a
+	# SubViewport to UPDATE_ONCE while awaiting frame_post_draw can deadlock on
+	# the macOS compatibility renderer after the first capture.
+	await _wait_frames(2)
 	var texture: ViewportTexture = viewport.get_texture()
 	if texture == null:
 		push_warning("Skipping %s because the renderer did not expose a viewport texture." % file_stem)
@@ -93,6 +102,17 @@ func _capture_scene(file_stem: String, viewport_size: Vector2i, scene_key: Strin
 		await _wait_frames(2)
 		return
 	var image: Image = texture.get_image()
+	var retry_count: int = 0
+	while (image == null or image.is_empty() or image.get_used_rect().size == Vector2i.ZERO) and retry_count < 12:
+		await get_tree().process_frame
+		image = texture.get_image()
+		retry_count += 1
+	if image == null or image.is_empty() or image.get_used_rect().size == Vector2i.ZERO:
+		push_warning("Skipping %s because the active renderer cannot read viewport pixels." % file_stem)
+		capture_index += 1
+		viewport.queue_free()
+		await _wait_frames(2)
+		return
 	if viewport_size != DESIGN_SIZE:
 		image.resize(viewport_size.x, viewport_size.y, Image.INTERPOLATE_LANCZOS)
 	var output_path: String = "%s/%02d_%s.png" % [OUTPUT_DIR, capture_index, file_stem]

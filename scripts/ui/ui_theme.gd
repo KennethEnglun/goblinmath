@@ -2,7 +2,10 @@ class_name UITheme
 extends RefCounted
 
 ## Shared visual helpers for the soft, rounded portrait UI.
-const CJK_FONT_PATH: String = "res://assets/fonts/NotoSansCJKtc-Regular.otf"
+const BODY_FONT_PATH: String = "res://assets/fonts/ChironGoRoundTC-500M.woff2"
+const BOLD_FONT_PATH: String = "res://assets/fonts/ChironGoRoundTC-700B.woff2"
+# Backwards-compatible alias used by existing checks and callers.
+const CJK_FONT_PATH: String = BODY_FONT_PATH
 const INK: Color = Color("#5c2d2d")
 const MUTED_INK: Color = Color("#8c5f58")
 const CREAM: Color = Color("#fff9ec")
@@ -14,18 +17,25 @@ const YELLOW: Color = Color("#ffe28a")
 const GREEN: Color = Color("#a8df9a")
 const ORANGE: Color = Color("#ff9b52")
 const RED: Color = Color("#ef6e7f")
-static var _shared_font: Font
-static var _font_checked: bool = false
+enum FontRole {
+	BODY,
+	BOLD
+}
 
-static func shared_font() -> Font:
-	if not _font_checked:
-		_font_checked = true
-		if ResourceLoader.exists(CJK_FONT_PATH):
-			_shared_font = load(CJK_FONT_PATH) as Font
-	return _shared_font
+static var _shared_fonts: Dictionary = {}
+static var _font_checked: Dictionary = {}
 
-static func apply_font(control: Control) -> void:
-	var font: Font = shared_font()
+static func shared_font(role: int = FontRole.BODY) -> Font:
+	var normalized_role: int = FontRole.BOLD if role == FontRole.BOLD else FontRole.BODY
+	if not bool(_font_checked.get(normalized_role, false)):
+		_font_checked[normalized_role] = true
+		var path: String = BOLD_FONT_PATH if normalized_role == FontRole.BOLD else BODY_FONT_PATH
+		if ResourceLoader.exists(path):
+			_shared_fonts[normalized_role] = load(path) as Font
+	return _shared_fonts.get(normalized_role) as Font
+
+static func apply_font(control: Control, role: int = FontRole.BODY) -> void:
+	var font: Font = shared_font(role)
 	if font != null:
 		control.add_theme_font_override("font", font)
 
@@ -66,7 +76,7 @@ static func add_gradient_background(parent: Control, top_color: Color, bottom_co
 	parent.move_child(background, 0)
 	return background
 
-static func make_label(text_value: String, font_size: int, color: Color = INK) -> Label:
+static func make_label(text_value: String, font_size: int, color: Color = INK, font_role: int = FontRole.BODY) -> Label:
 	var label: Label = Label.new()
 	label.text = text_value
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -76,7 +86,7 @@ static func make_label(text_value: String, font_size: int, color: Color = INK) -
 	label.add_theme_color_override("font_shadow_color", Color(0.25, 0.12, 0.12, 0.16))
 	label.add_theme_constant_override("shadow_offset_x", 0)
 	label.add_theme_constant_override("shadow_offset_y", 4)
-	apply_font(label)
+	apply_font(label, font_role)
 	return label
 
 static func make_dual_label(primary: String, secondary: String, primary_size: int = 40, secondary_size: int = 20, color: Color = INK) -> VBoxContainer:
@@ -84,12 +94,29 @@ static func make_dual_label(primary: String, secondary: String, primary_size: in
 	stack.alignment = BoxContainer.ALIGNMENT_CENTER
 	stack.add_theme_constant_override("separation", 0)
 	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var main_label: Label = make_label(primary, primary_size, color)
+	var main_label: Label = make_label(primary, primary_size, color, FontRole.BOLD)
 	var small_label: Label = make_label(secondary, secondary_size, color.lightened(0.12))
+	main_label.name = "PrimaryLabel"
+	small_label.name = "SecondaryLabel"
 	main_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	small_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stack.add_child(main_label)
 	stack.add_child(small_label)
+	return stack
+
+static func make_zh_en_label(chinese: String, english: String, chinese_size: int = 36, english_size: int = 15, color: Color = INK) -> VBoxContainer:
+	var stack: VBoxContainer = VBoxContainer.new()
+	stack.alignment = BoxContainer.ALIGNMENT_CENTER
+	stack.add_theme_constant_override("separation", -2)
+	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var zh_label: Label = make_label(chinese, chinese_size, color, FontRole.BOLD)
+	var en_label: Label = make_label(english, english_size, color.lightened(0.16), FontRole.BODY)
+	zh_label.name = "PrimaryLabel"
+	en_label.name = "SecondaryLabel"
+	zh_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	en_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stack.add_child(zh_label)
+	stack.add_child(en_label)
 	return stack
 
 static func make_panel(background: Color = CREAM, border: Color = Color("#f3d88a"), radius: int = 34, border_width: int = 5) -> Panel:
@@ -109,6 +136,14 @@ static func make_texture_style(texture: Texture2D, tint: Color = Color.WHITE, te
 	style.content_margin_top = texture_margin
 	style.content_margin_right = texture_margin
 	style.content_margin_bottom = texture_margin
+	return style
+
+static func make_button_texture_style(texture: Texture2D, tint: Color = Color.WHITE, texture_margin: int = 72) -> StyleBoxTexture:
+	var style: StyleBoxTexture = make_texture_style(texture, tint, texture_margin)
+	style.content_margin_left = 12.0
+	style.content_margin_top = 8.0
+	style.content_margin_right = 12.0
+	style.content_margin_bottom = 8.0
 	return style
 
 static func apply_texture_panel_skin(panel: Panel, texture_path: String, texture_margin: int = 32) -> bool:
@@ -158,6 +193,12 @@ static func make_button(primary: String, secondary: String, background: Color = 
 static func set_dual_button_text(button: Button, primary: String, secondary: String) -> void:
 	if button == null:
 		return
+	var named_primary: Label = button.find_child("PrimaryLabel", true, false) as Label
+	var named_secondary: Label = button.find_child("SecondaryLabel", true, false) as Label
+	if named_primary != null and named_secondary != null:
+		named_primary.text = primary
+		named_secondary.text = secondary
+		return
 	var content: VBoxContainer = button.get_child(0) as VBoxContainer
 	if content != null and content.get_child_count() >= 2:
 		var main_label: Label = content.get_child(0) as Label
@@ -181,7 +222,7 @@ static func make_key_button(value: String, background: Color, min_size: Vector2 
 	button.add_theme_stylebox_override("hover", rounded_style(background.lightened(0.08), background.darkened(0.2), 28, 5))
 	button.add_theme_stylebox_override("pressed", rounded_style(background.darkened(0.08), background.darkened(0.24), 28, 5))
 	button.add_theme_stylebox_override("disabled", rounded_style(background.darkened(0.24), background.darkened(0.3), 28, 5))
-	apply_font(button)
+	apply_font(button, FontRole.BOLD)
 	return button
 
 static func make_safe_margin(parent: Control, margin: int = 52) -> MarginContainer:

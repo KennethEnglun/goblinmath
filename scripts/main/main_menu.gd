@@ -5,7 +5,7 @@ const BACKGROUND_PATH: String = "res://assets/ui/start/start_background_v2.png"
 const EFFECTS_PATH: String = "res://assets/ui/start/start_effects_v2.png"
 const LOGO_PATH: String = "res://assets/ui/start/start_logo_v2.png"
 const GOBLIN_PATH: String = "res://assets/ui/start/goblin_start_v2.png"
-const BUTTON_PATH: String = "res://assets/ui/start/start_adventure_button_v2.png"
+const BUTTON_PATH: String = "res://assets/ui/character/character_action_button_skin_v1.png"
 
 var start_button: BaseButton
 var logo_layer: TextureRect
@@ -56,14 +56,20 @@ func _build_layered_screen() -> void:
 	_place_layer(goblin_layer, 0.17, 0.27, 0.83, 0.72)
 	layer_stage.add_child(goblin_layer)
 
-	var texture_button: TextureButton = TextureButton.new()
+	var texture_button: Button = Button.new()
 	texture_button.name = "StartAdventureButton"
-	texture_button.texture_normal = load(BUTTON_PATH)
-	texture_button.ignore_texture_size = true
-	texture_button.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
 	texture_button.focus_mode = Control.FOCUS_NONE
 	texture_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	texture_button.tooltip_text = "開始冒險"
+	for state: String in ["normal", "hover", "pressed", "disabled"]:
+		texture_button.add_theme_stylebox_override(state, UITheme.make_button_texture_style(load(BUTTON_PATH), Color.WHITE, 112))
+	var button_copy: VBoxContainer = UITheme.make_zh_en_label("開始冒險", "START ADVENTURE", 42, 17, UITheme.INK)
+	button_copy.name = "StartAdventureButtonText"
+	button_copy.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	button_copy.offset_left = 80.0
+	button_copy.offset_right = -80.0
+	button_copy.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	texture_button.add_child(button_copy)
 	_place_layer(texture_button, 0.05, 0.76, 0.95, 0.95)
 	layer_stage.add_child(texture_button)
 	start_button = texture_button

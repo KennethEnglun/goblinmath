@@ -30,8 +30,10 @@ const SCROLL_DRAG_THRESHOLD: float = 12.0
 
 var top_offset: float = 0.0
 var active_mode: String = "summon"
+var return_scene: String = "world_map"
 var selected_merge_uids: Array[String] = []
 var selected_merge_template: String = ""
+var auto_merge_plan: Dictionary = {}
 var toast_tween: Tween
 
 var gacha_background_layer: Control
@@ -40,6 +42,7 @@ var gacha_summon_layer: Control
 var gacha_panel_layer: Control
 var gacha_result_layer: Control
 var gacha_merge_layer: Control
+var gacha_auto_merge_layer: Control
 var gacha_hud_layer: Control
 var gacha_action_layer: Control
 var gacha_toast_layer: Control
@@ -48,18 +51,25 @@ var gem_label: Label
 var summon_panel: Panel
 var merge_panel: Panel
 var action_panel: Panel
+var gacha_title: VBoxContainer
 var summary_label: Label
 var pool_label: Label
 var merge_selection_label: Label
 var merge_scroll: ScrollContainer
 var merge_content: VBoxContainer
 var merge_button: Button
+var auto_merge_button: Button
 var single_pull_button: Button
 var ten_pull_button: Button
 var watch_ad_button: Button
 var summon_action_row: HBoxContainer
 var summon_tab_button: Button
 var merge_tab_button: Button
+var auto_merge_preview_summary: Label
+var auto_merge_preview_content: VBoxContainer
+var auto_merge_preview_panel: Panel
+var auto_merge_confirm_button: Button
+var auto_merge_cancel_button: Button
 var result_list: VBoxContainer
 var result_info_label: Label
 var goblin_sprite: TextureRect
@@ -71,18 +81,25 @@ var scroll_drag_last_position: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
 	set_process_input(true)
+	var entry: Dictionary = GameManager.consume_gacha_entry()
+	active_mode = "merge" if str(entry.get("mode", "summon")) == "merge" else "summon"
+	return_scene = "character" if str(entry.get("return_scene", "world_map")) == "character" else "world_map"
 	_build_visual_layers()
 	_build_hud()
 	_build_summon_stage()
 	_build_main_panels()
 	_build_actions()
 	_build_result_layer()
+	_build_auto_merge_preview()
 	_build_toast_layer()
 	var ad_service: Node = _get_rewarded_ad_service()
 	var ad_callback: Callable = Callable(self, "_on_rewarded_ad_completed")
 	if ad_service != null and not ad_service.is_connected("reward_completed", ad_callback):
 		ad_service.connect("reward_completed", ad_callback)
-	_set_mode("summon")
+	var availability_callback: Callable = Callable(self, "_on_rewarded_ad_availability_changed")
+	if ad_service != null and ad_service.has_signal("availability_changed") and not ad_service.is_connected("availability_changed", availability_callback):
+		ad_service.connect("availability_changed", availability_callback)
+	_set_mode(active_mode)
 	_refresh()
 
 func _input(event: InputEvent) -> void:
@@ -150,6 +167,7 @@ func _build_visual_layers() -> void:
 	gacha_panel_layer = _make_layer("GachaPanelLayer", Control.MOUSE_FILTER_IGNORE)
 	gacha_result_layer = _make_layer("GachaResultLayer", Control.MOUSE_FILTER_IGNORE)
 	gacha_merge_layer = _make_layer("GachaMergeLayer", Control.MOUSE_FILTER_IGNORE)
+	gacha_auto_merge_layer = _make_layer("GachaAutoMergeLayer", Control.MOUSE_FILTER_IGNORE)
 	gacha_hud_layer = _make_layer("GachaHudLayer", Control.MOUSE_FILTER_IGNORE)
 	gacha_action_layer = _make_layer("GachaActionLayer", Control.MOUSE_FILTER_IGNORE)
 	gacha_toast_layer = _make_layer("GachaToastLayer", Control.MOUSE_FILTER_IGNORE)
@@ -161,6 +179,7 @@ func _build_visual_layers() -> void:
 	UITheme.set_layer_order(gacha_action_layer, 20)
 	UITheme.set_layer_order(gacha_hud_layer, 30)
 	UITheme.set_layer_order(gacha_result_layer, 100)
+	UITheme.set_layer_order(gacha_auto_merge_layer, 110)
 	UITheme.set_layer_order(gacha_toast_layer, 120)
 
 func _build_hud() -> void:
@@ -173,11 +192,11 @@ func _build_hud() -> void:
 	back_button.name = "BackToMapButton"
 	back_button.pressed.connect(_on_back_pressed)
 	header.add_child(back_button)
-	var title: VBoxContainer = UITheme.make_dual_label("GACHA", "轉蛋", 39, 20, UITheme.INK)
-	title.name = "GachaTitle"
-	title.position = Vector2(329, 0)
-	title.size = Vector2(300, 104)
-	header.add_child(title)
+	gacha_title = UITheme.make_dual_label("GACHA", "轉蛋", 39, 20, UITheme.INK)
+	gacha_title.name = "GachaTitle"
+	gacha_title.position = Vector2(329, 0)
+	gacha_title.size = Vector2(300, 104)
+	header.add_child(gacha_title)
 	var gem_badge: Panel = UITheme.make_panel(Color("#e8ddff"), Color("#b79bdf"), 28, 4)
 	gem_badge.name = "GemBadge"
 	gem_badge.position = Vector2(700, 8)
@@ -316,21 +335,30 @@ func _build_actions() -> void:
 	watch_ad_button = _make_button("WATCH AD", "觀看廣告 +%d\n廣告功能尚未開放" % ad_reward, Color("#d8d1d0"), Vector2(0, 112))
 	watch_ad_button.name = "WatchAdButton"
 	watch_ad_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	watch_ad_button.pressed.connect(_on_watch_ad_pressed)
 	watch_ad_button.disabled = not _is_rewarded_ad_available()
-	watch_ad_button.tooltip_text = "廣告功能尚未開放"
 	var ad_lock_badge: TextureRect = _make_sprite(AD_LOCK_BADGE_PATH, Vector2(54, 54))
 	ad_lock_badge.name = "AdLockBadge"
 	ad_lock_badge.position = Vector2(10, 29)
 	ad_lock_badge.modulate = Color(1.0, 1.0, 1.0, 0.72)
 	watch_ad_button.add_child(ad_lock_badge)
 	summon_action_row.add_child(watch_ad_button)
+	_refresh_rewarded_ad_button()
+	var merge_action_row: HBoxContainer = HBoxContainer.new()
+	merge_action_row.name = "MergeActionRow"
+	merge_action_row.add_theme_constant_override("separation", 12)
+	stack.add_child(merge_action_row)
 	merge_button = _make_button("MERGE", "合成 0 / 3", Color("#bfe7d3"), Vector2(0, 112))
 	merge_button.name = "MergeButton"
-	merge_button.custom_minimum_size = Vector2(780, 112)
-	merge_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	merge_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	merge_button.pressed.connect(_on_merge_pressed)
-	stack.add_child(merge_button)
-	var help: Label = UITheme.make_label("相同模板、同稀有度、未穿戴的三件裝備可以合成下一階，等級不限。\n合成會退還材料曾支付的強化金幣。\n廣告獎勵將在未來版本接入。", 21, UITheme.MUTED_INK)
+	merge_action_row.add_child(merge_button)
+	auto_merge_button = _make_button("AUTO MERGE", "自動合成", Color("#ffe19a"), Vector2(0, 112))
+	auto_merge_button.name = "AutoMergeButton"
+	auto_merge_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	auto_merge_button.pressed.connect(_on_auto_merge_pressed)
+	merge_action_row.add_child(auto_merge_button)
+	var help: Label = UITheme.make_label("相同模板的三件裝備可以合成下一階，已裝備物品也可作為材料。\n自動合成會先顯示預覽；合成會退還材料曾支付的強化金幣。\n完成 rewarded ad 後可獲得轉蛋鑽石。", 21, UITheme.MUTED_INK)
 	help.name = "GachaHelpLabel"
 	help.custom_minimum_size = Vector2(0, 90)
 	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -370,6 +398,50 @@ func _build_result_layer() -> void:
 	close_button.pressed.connect(_on_close_result_pressed)
 	stack.add_child(close_button)
 
+func _build_auto_merge_preview() -> void:
+	gacha_auto_merge_layer.visible = false
+	var overlay: ColorRect = ColorRect.new()
+	overlay.name = "AutoMergePreviewOverlay"
+	overlay.color = Color(0.18, 0.12, 0.16, 0.68)
+	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	gacha_auto_merge_layer.add_child(overlay)
+	auto_merge_preview_panel = _make_panel("AutoMergePreviewPanel", Color("#fff8ed"), Color("#e5b95e"), Vector2(70, 250 + top_offset), Vector2(940, 1400), RESULT_CARD_PATH, SHARED_PANEL_SKIN_PATH)
+	auto_merge_preview_panel.z_index = 1
+	gacha_auto_merge_layer.add_child(auto_merge_preview_panel)
+	var stack: VBoxContainer = _panel_stack(auto_merge_preview_panel, 24)
+	stack.add_child(UITheme.make_dual_label("AUTO MERGE PREVIEW", "自動合成預覽", 34, 21, UITheme.INK))
+	auto_merge_preview_summary = UITheme.make_label("", 23, UITheme.MUTED_INK)
+	auto_merge_preview_summary.name = "AutoMergePreviewSummary"
+	auto_merge_preview_summary.custom_minimum_size = Vector2(0, 150)
+	auto_merge_preview_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	stack.add_child(auto_merge_preview_summary)
+	var preview_scroll: ScrollContainer = ScrollContainer.new()
+	preview_scroll.name = "AutoMergePreviewScroll"
+	preview_scroll.custom_minimum_size = Vector2(0, 860)
+	preview_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	preview_scroll.follow_focus = true
+	stack.add_child(preview_scroll)
+	auto_merge_preview_content = VBoxContainer.new()
+	auto_merge_preview_content.name = "AutoMergePreviewContent"
+	auto_merge_preview_content.custom_minimum_size = Vector2(850, 0)
+	auto_merge_preview_content.add_theme_constant_override("separation", 8)
+	preview_scroll.add_child(auto_merge_preview_content)
+	var action_row: HBoxContainer = HBoxContainer.new()
+	action_row.name = "AutoMergePreviewActions"
+	action_row.add_theme_constant_override("separation", 12)
+	stack.add_child(action_row)
+	auto_merge_cancel_button = _make_button("CANCEL", "取消", Color("#d9edf0"), Vector2(0, 112))
+	auto_merge_cancel_button.name = "CancelAutoMergeButton"
+	auto_merge_cancel_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	auto_merge_cancel_button.pressed.connect(_on_cancel_auto_merge_pressed)
+	action_row.add_child(auto_merge_cancel_button)
+	auto_merge_confirm_button = _make_button("CONFIRM", "確認自動合成", Color("#bfe7d3"), Vector2(0, 112))
+	auto_merge_confirm_button.name = "ConfirmAutoMergeButton"
+	auto_merge_confirm_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	auto_merge_confirm_button.pressed.connect(_on_confirm_auto_merge_pressed)
+	action_row.add_child(auto_merge_confirm_button)
+
 func _build_toast_layer() -> void:
 	var toast: Panel = UITheme.make_panel(Color(0.36, 0.18, 0.2, 0.94), Color("#f2b4bb"), 28, 3)
 	toast.name = "GachaToast"
@@ -387,6 +459,9 @@ func _set_mode(mode: String) -> void:
 		return
 	_clear_scroll_drag()
 	active_mode = mode
+	_set_page_title(active_mode)
+	if gacha_auto_merge_layer != null:
+		gacha_auto_merge_layer.visible = false
 	if summon_panel != null:
 		summon_panel.visible = active_mode == "summon"
 	if merge_panel != null:
@@ -403,6 +478,8 @@ func _set_mode(mode: String) -> void:
 		summon_action_row.visible = active_mode == "summon"
 	if merge_button != null:
 		merge_button.visible = active_mode == "merge"
+	if auto_merge_button != null:
+		auto_merge_button.visible = active_mode == "merge"
 	if summon_tab_button != null:
 		summon_tab_button.button_pressed = active_mode == "summon"
 	if merge_tab_button != null:
@@ -413,6 +490,16 @@ func _set_mode(mode: String) -> void:
 		action_panel.position.y = (1490.0 if active_mode == "merge" else 1290.0) + top_offset
 	if active_mode == "merge":
 		_refresh_merge_panel()
+
+func _set_page_title(mode: String) -> void:
+	if gacha_title == null or gacha_title.get_child_count() < 2:
+		return
+	var primary: Label = gacha_title.get_child(0) as Label
+	var secondary: Label = gacha_title.get_child(1) as Label
+	if primary != null:
+		primary.text = "MERGE" if mode == "merge" else "GACHA"
+	if secondary != null:
+		secondary.text = "合成" if mode == "merge" else "轉蛋"
 
 func _get_active_scroll() -> ScrollContainer:
 	if active_mode == "merge" and merge_scroll != null and merge_scroll.visible:
@@ -473,6 +560,7 @@ func _refresh() -> void:
 		single_pull_button.disabled = current_gems < single_cost
 	if ten_pull_button != null:
 		ten_pull_button.disabled = current_gems < ten_cost
+	_refresh_rewarded_ad_button()
 	_refresh_merge_panel()
 	_set_mode(active_mode)
 
@@ -482,34 +570,44 @@ func _refresh_merge_panel() -> void:
 	var valid_uids: Array[String] = []
 	for uid: String in selected_merge_uids:
 		var selected_item: Dictionary = EquipmentSystem.find_item(GameManager.get_inventory(), uid)
-		if not selected_item.is_empty() and int(selected_item.get("level", 1)) >= 1 and not EquipmentSystem.is_equipped(GameManager.player_state, uid):
+		if not selected_item.is_empty() and int(selected_item.get("level", 1)) >= 1:
 			valid_uids.append(uid)
 	selected_merge_uids = valid_uids
 	if selected_merge_uids.is_empty():
 		selected_merge_template = ""
-	merge_selection_label.text = "MATERIALS %d / 3\n選擇三件相同模板、同稀有度、未穿戴的裝備（等級不限）" % selected_merge_uids.size()
+	merge_selection_label.text = "MATERIALS %d / 3\n選擇三件相同模板的裝備（已裝備物品也可使用）" % selected_merge_uids.size()
 	UITheme.set_dual_button_text(merge_button, "MERGE", "合成 %d / 3" % selected_merge_uids.size())
 	merge_button.disabled = selected_merge_uids.size() != 3
+	_refresh_auto_merge_button()
 	_clear_children(merge_content)
 	var inventory: Array = GameManager.get_inventory()
 	var templates: Array = DataManager.get_all_equipment()
-	var available_rarities: Array[String] = GachaSystem.get_available_rarities(int(GameManager.player_state.get("highest_completed_stage", 0)))
 	templates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return _template_item_count(str(a.get("id", "")), inventory) > _template_item_count(str(b.get("id", "")), inventory)
 	)
 	var added_group: bool = false
 	for template: Dictionary in templates:
-		if not available_rarities.has(str(template.get("rarity", "common"))) or str(template.get("merge_to", "")).is_empty():
+		if str(template.get("merge_to", "")).is_empty():
 			continue
 		var template_id: String = str(template.get("id", ""))
 		var items: Array = []
 		for raw_item: Variant in inventory:
 			if raw_item is Dictionary and str(raw_item.get("template_id", "")) == template_id:
 				items.append(raw_item)
+		if items.is_empty():
+			continue
 		added_group = true
 		merge_content.add_child(_make_merge_group(template, items))
 	if not added_group:
 		merge_content.add_child(UITheme.make_label("EMPTY MATERIALS\n尚未有可合成的裝備。", 24, UITheme.MUTED_INK))
+
+func _refresh_auto_merge_button() -> void:
+	if auto_merge_button == null:
+		return
+	auto_merge_plan = GameManager.preview_auto_merge()
+	var merge_count: int = int(auto_merge_plan.get("merge_count", 0))
+	auto_merge_button.disabled = merge_count <= 0
+	UITheme.set_dual_button_text(auto_merge_button, "AUTO MERGE", "自動合成 %d 組" % merge_count)
 
 func _make_merge_group(template: Dictionary, items: Array) -> Panel:
 	var rarity: String = str(template.get("rarity", "common"))
@@ -551,7 +649,7 @@ func _make_merge_group(template: Dictionary, items: Array) -> Panel:
 			continue
 		var item: Dictionary = raw_item
 		var uid: String = str(item.get("uid", ""))
-		var is_valid: bool = int(item.get("level", 1)) >= 1 and not EquipmentSystem.is_equipped(GameManager.player_state, uid)
+		var is_valid: bool = int(item.get("level", 1)) >= 1
 		var item_button: Button = _make_merge_material_button(item, template, rarity, is_valid, selected_merge_uids.has(uid))
 		if is_valid:
 			item_button.pressed.connect(_on_merge_item_pressed.bind(uid, str(template.get("id", ""))))
@@ -579,9 +677,11 @@ func _make_merge_material_button(item: Dictionary, template: Dictionary, rarity:
 	material_icon.position = Vector2(11, 8)
 	material_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	item_button.add_child(material_icon)
-	var level_label: Label = UITheme.make_label("Lv.%d" % int(item.get("level", 1)), 20, UITheme.INK if is_valid else UITheme.MUTED_INK)
+	var is_equipped: bool = EquipmentSystem.is_equipped(GameManager.player_state, str(item.get("uid", "")))
+	var level_text: String = "Lv.%d\n已裝備" % int(item.get("level", 1)) if is_equipped else "Lv.%d" % int(item.get("level", 1))
+	var level_label: Label = UITheme.make_label(level_text, 18, UITheme.INK if is_valid else UITheme.MUTED_INK)
 	level_label.position = Vector2(0, 108)
-	level_label.size = Vector2(120, 36)
+	level_label.size = Vector2(120, 42)
 	level_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	item_button.add_child(level_label)
 	if is_valid:
@@ -633,6 +733,17 @@ func _on_single_pull_pressed() -> void:
 func _on_ten_pull_pressed() -> void:
 	_perform_pull(10)
 
+
+func _on_watch_ad_pressed() -> void:
+	var ad_service: Node = _get_rewarded_ad_service()
+	if ad_service == null or not ad_service.has_method("request_reward") or not bool(ad_service.call("request_reward")):
+		_refresh_rewarded_ad_button()
+		_show_toast("AD NOT READY\n廣告尚未準備好，請稍候再試。")
+		return
+	_refresh_rewarded_ad_button()
+	var ad_reward: int = int(DataManager.get_gacha_config().get("ad_reward", GameBalance.AD_GEM_REWARD))
+	_show_toast("WATCH AD\n完成廣告後獲得 %d 鑽石。" % ad_reward)
+
 func _perform_pull(count: int) -> void:
 	var result: Dictionary = GameManager.pull_gacha(count)
 	if not bool(result.get("success", false)):
@@ -659,6 +770,83 @@ func _on_merge_pressed() -> void:
 	else:
 		_show_toast(_reason_text(str(result.get("reason", "merge_failed"))))
 	_refresh()
+
+func _on_auto_merge_pressed() -> void:
+	_show_auto_merge_preview()
+
+func _show_auto_merge_preview() -> void:
+	auto_merge_plan = GameManager.preview_auto_merge()
+	var steps: Variant = auto_merge_plan.get("steps", [])
+	if not steps is Array or (steps as Array).is_empty():
+		_show_toast("NO MERGEABLE ITEMS\n目前沒有可自動合成的裝備。")
+		_refresh()
+		return
+	var merge_count: int = int(auto_merge_plan.get("merge_count", (steps as Array).size()))
+	var consumed_count: int = int(auto_merge_plan.get("consumed_count", 0))
+	var output_count: int = int(auto_merge_plan.get("output_count", 0))
+	var refund_coins: int = int(auto_merge_plan.get("refund_coins", 0))
+	var replacements: Variant = auto_merge_plan.get("equipped_replacements", {})
+	var replacement_text: String = "無"
+	if replacements is Dictionary and not (replacements as Dictionary).is_empty():
+		var replacement_slots: Array[String] = []
+		for raw_slot: Variant in (replacements as Dictionary).keys():
+			replacement_slots.append(_slot_name(str(raw_slot)))
+		replacement_text = ", ".join(replacement_slots)
+	auto_merge_preview_summary.text = "共 %d 組合成 · 消耗 %d 件 · 最終產出 %d 件\n退還 %d 金幣\n已裝備部位將自動換上新產物：%s" % [merge_count, consumed_count, output_count, refund_coins, replacement_text]
+	_clear_children(auto_merge_preview_content)
+	for raw_step: Variant in steps:
+		if not raw_step is Dictionary:
+			continue
+		var step: Dictionary = raw_step as Dictionary
+		var source_id: String = str(step.get("source_template_id", ""))
+		var target_id: String = str(step.get("target_id", ""))
+		var source: Dictionary = DataManager.get_equipment(source_id)
+		var target: Dictionary = DataManager.get_equipment(target_id)
+		var equipped_suffix: String = " · 裝備部位會替換" if not str(step.get("equipped_slot", "")).is_empty() else ""
+		var line: String = "第%d組　%s × 3  →  %s%s" % [int(step.get("step_index", 0)), str(source.get("name_zh", source.get("name", source_id))), str(target.get("name_zh", target.get("name", target_id))), equipped_suffix]
+		var step_label: Label = UITheme.make_label(line, 20, UITheme.INK)
+		step_label.custom_minimum_size = Vector2(0, 58)
+		step_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		step_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		auto_merge_preview_content.add_child(step_label)
+	var output_label: Label = UITheme.make_label("最終產出", 22, UITheme.INK)
+	output_label.custom_minimum_size = Vector2(0, 60)
+	auto_merge_preview_content.add_child(output_label)
+	var final_outputs: Variant = auto_merge_plan.get("final_outputs", [])
+	if final_outputs is Array:
+		for raw_output: Variant in final_outputs:
+			if not raw_output is Dictionary:
+				continue
+			var output: Dictionary = raw_output as Dictionary
+			var output_template: Dictionary = DataManager.get_equipment(str(output.get("template_id", "")))
+			var output_text: String = "・%s Lv.1" % str(output_template.get("name_zh", output_template.get("name", "裝備")))
+			if not str(output.get("equipped_slot", "")).is_empty():
+				output_text += "（自動裝備）"
+			auto_merge_preview_content.add_child(UITheme.make_label(output_text, 20, UITheme.MUTED_INK))
+	auto_merge_confirm_button.disabled = false
+	gacha_action_layer.visible = false
+	gacha_auto_merge_layer.visible = true
+
+func _on_cancel_auto_merge_pressed() -> void:
+	auto_merge_plan = {}
+	gacha_auto_merge_layer.visible = false
+	gacha_action_layer.visible = active_mode == "summon" or active_mode == "merge"
+
+func _on_confirm_auto_merge_pressed() -> void:
+	var result: Dictionary = GameManager.auto_merge_equipment()
+	auto_merge_plan = {}
+	gacha_auto_merge_layer.visible = false
+	gacha_action_layer.visible = active_mode == "summon" or active_mode == "merge"
+	if not bool(result.get("success", false)):
+		_show_toast(_reason_text(str(result.get("reason", "merge_failed"))))
+		_refresh()
+		return
+	_refresh()
+	_play_merge_effect()
+	_show_toast("AUTO MERGE SUCCESS\n完成 %d 組合成！\n消耗 %d 件，退還 %d 金幣。" % [int(result.get("merge_count", 0)), (result.get("consumed_uids", []) as Array).size(), int(result.get("refund_coins", 0))])
+
+func _slot_name(slot: String) -> String:
+	return {"weapon": "武器", "head": "頭部", "body": "身體"}.get(slot, slot)
 
 func _show_results(result: Dictionary) -> void:
 	_clear_children(result_list)
@@ -727,7 +915,28 @@ func _get_rewarded_ad_service() -> Node:
 
 func _is_rewarded_ad_available() -> bool:
 	var ad_service: Node = _get_rewarded_ad_service()
-	return ad_service != null and bool(ad_service.call("is_available"))
+	return ad_service != null and ad_service.has_method("is_available") and bool(ad_service.call("is_available"))
+
+
+func _refresh_rewarded_ad_button() -> void:
+	if watch_ad_button == null:
+		return
+	var ad_reward: int = int(DataManager.get_gacha_config().get("ad_reward", GameBalance.AD_GEM_REWARD))
+	var available: bool = _is_rewarded_ad_available()
+	watch_ad_button.disabled = not available
+	watch_ad_button.tooltip_text = "觀看完整廣告後獲得鑽石" if available else "廣告正在載入，請稍候"
+	UITheme.set_dual_button_text(
+		watch_ad_button,
+		"WATCH AD",
+		"觀看廣告 +%d\n%s" % [ad_reward, "可觀看" if available else "廣告載入中"]
+	)
+	var lock_badge: Control = watch_ad_button.get_node_or_null("AdLockBadge") as Control
+	if lock_badge != null:
+		lock_badge.visible = not available
+
+
+func _on_rewarded_ad_availability_changed(_available: bool) -> void:
+	_refresh_rewarded_ad_button()
 
 func _on_summon_tab_pressed() -> void:
 	_set_mode("summon")
@@ -737,7 +946,10 @@ func _on_merge_tab_pressed() -> void:
 
 func _on_back_pressed() -> void:
 	AudioManager.play_sfx("button_click")
-	GameManager.go_to_world_map()
+	if return_scene == "character":
+		GameManager.go_to_character()
+	else:
+		GameManager.go_to_world_map()
 
 func _show_toast(text_value: String) -> void:
 	var toast: Panel = gacha_toast_layer.get_node_or_null("GachaToast") as Panel
@@ -760,7 +972,7 @@ func _reason_text(reason: String) -> String:
 		"empty_gacha_pool": "POOL LOCKED\n目前沒有可抽取的裝備。",
 		"requires_three_items": "NEED THREE ITEMS\n需要三件材料。",
 		"invalid_level": "INVALID LEVEL\n裝備等級無效。",
-		"equipped_item": "EQUIPPED ITEM\n穿戴中的裝備不能合成。",
+		"equipped_item": "EQUIPPED ITEM\n已裝備物品可以作為合成材料。",
 		"templates_must_match": "SAME ITEM ONLY\n請選擇相同模板。",
 		"rarities_must_match": "SAME RARITY ONLY\n請選擇相同稀有度。",
 		"max_rarity": "MAX RARITY\n這件裝備已經是最高階。"

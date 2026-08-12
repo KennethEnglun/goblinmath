@@ -22,6 +22,8 @@ var transition_busy: bool = false
 # than persisted: after a boss clear the player sees the milestone once, while
 # a later fresh map entry still follows the highest-unlocked-stage rule.
 var map_focus_stage: int = 0
+var gacha_entry_mode: String = "summon"
+var gacha_return_scene: String = "world_map"
 
 func _ready() -> void:
 	player_state = SaveManager.load_game()
@@ -79,8 +81,19 @@ func go_to_main_menu() -> void:
 func go_to_character() -> void:
 	_change_scene(CHARACTER_SCENE)
 
-func go_to_gacha() -> void:
+func go_to_gacha(mode: String = "summon", return_scene: String = "world_map") -> void:
+	gacha_entry_mode = "merge" if mode == "merge" else "summon"
+	gacha_return_scene = "character" if return_scene == "character" else "world_map"
 	_change_scene(GACHA_SCENE)
+
+func consume_gacha_entry() -> Dictionary:
+	var entry: Dictionary = {
+		"mode": gacha_entry_mode,
+		"return_scene": gacha_return_scene
+	}
+	gacha_entry_mode = "summon"
+	gacha_return_scene = "world_map"
+	return entry
 
 func is_stage_unlocked(stage_id: int) -> bool:
 	return stage_id >= 1 and stage_id <= int(player_state.get("unlocked_stage", 1)) and not DataManager.get_stage(stage_id).is_empty()
@@ -414,6 +427,12 @@ func merge_equipment(item_uids: Array[String]) -> Dictionary:
 	var refund_coins: int = 0
 	for item: Dictionary in selected_items:
 		refund_coins += EquipmentSystem.get_upgrade_coins_spent(item)
+	var equipped: Dictionary = player_state.get("equipped", {}).duplicate() if player_state.get("equipped", {}) is Dictionary else {}
+	var replaced_equipped_slots: Array[String] = []
+	for slot: String in EquipmentSystem.SLOTS:
+		if item_uids.has(str(equipped.get(slot, ""))):
+			equipped[slot] = target_item.get("uid", "")
+			replaced_equipped_slots.append(slot)
 	var remove_indices: Array[int] = []
 	for uid: String in item_uids:
 		remove_indices.append(EquipmentSystem.find_item_index(inventory, uid))
@@ -423,6 +442,7 @@ func merge_equipment(item_uids: Array[String]) -> Dictionary:
 		inventory.remove_at(index)
 	inventory.append(target_item)
 	player_state["inventory"] = inventory
+	player_state["equipped"] = equipped
 	player_state["coins"] = get_coins() + refund_coins
 	player_state["next_item_uid"] = int(player_state.get("next_item_uid", 1)) + 1
 	_save_and_emit()
@@ -432,8 +452,142 @@ func merge_equipment(item_uids: Array[String]) -> Dictionary:
 		"consumed_uids": item_uids.duplicate(),
 		"target_id": target_id,
 		"refund_coins": refund_coins,
+		"replaced_equipped_slots": replaced_equipped_slots,
 		"item": target_item.duplicate(true)
 	}
+
+func preview_auto_merge() -> Dictionary:
+	return EquipmentSystem.plan_auto_merge(get_inventory(), player_state)
+
+func auto_merge_equipment() -> Dictionary:
+	var inventory: Array = get_inventory()
+	var plan: Dictionary = EquipmentSystem.plan_auto_merge(inventory, player_state)
+	var steps: Variant = plan.get("steps", [])
+	if not steps is Array or (steps as Array).is_empty():
+		return {"success": false, "reason": "no_mergeable_items", "plan": plan}
+	var final_outputs: Variant = plan.get("final_outputs", [])
+	if not final_outputs is Array:
+		return {"success": false, "reason": "invalid_merge_plan"}
+
+	var original_items: Dictionary = {}
+	for raw_item: Variant in inventory:
+		if raw_item is Dictionary:
+			var original_item: Dictionary = raw_item as Dictionary
+			original_items[str(original_item.get("uid", ""))] = original_item.duplicate(true)
+
+	var final_tokens: Dictionary = {}
+	var final_token_slots: Dictionary = {}
+	for raw_output: Variant in final_outputs:
+		if raw_output is Dictionary:
+			var output_data: Dictionary = raw_output as Dictionary
+			var output_token: String = str(output_data.get("output_token", ""))
+			final_tokens[output_token] = true
+			final_token_slots[output_token] = str(output_data.get("equipped_slot", ""))
+
+	var working_items: Dictionary = {}
+	for uid: String in original_items.keys():
+		working_items[uid] = original_items[uid]
+	var consumed_original_uids: Dictionary = {}
+	var generated_items: Dictionary = {}
+	var created_items: Array = []
+	var created_equipped_slots: Dictionary = {}
+	var next_uid: int = maxi(1, int(player_state.get("next_item_uid", 1)))
+	var refund_coins: int = 0
+
+	for raw_step: Variant in steps:
+		if not raw_step is Dictionary:
+			return {"success": false, "reason": "invalid_merge_plan"}
+		var step: Dictionary = raw_step as Dictionary
+		var material_uids: Variant = step.get("material_uids", [])
+		if not material_uids is Array or (material_uids as Array).size() != 3:
+			return {"success": false, "reason": "invalid_merge_plan"}
+		var inherited_equipped_slot: String = ""
+		for raw_material_uid: Variant in material_uids:
+			var material_uid: String = str(raw_material_uid)
+			var material: Dictionary = working_items.get(material_uid, {}) if working_items.has(material_uid) else generated_items.get(material_uid, {})
+			if material.is_empty():
+				return {"success": false, "reason": "invalid_merge_plan"}
+			var material_slot: String = str(material.get("_auto_equipped_slot", ""))
+			if inherited_equipped_slot.is_empty() and not material_slot.is_empty():
+				inherited_equipped_slot = material_slot
+			if not bool(material.get("_auto_created", false)):
+				if consumed_original_uids.has(material_uid):
+					return {"success": false, "reason": "invalid_merge_plan"}
+				consumed_original_uids[material_uid] = true
+				refund_coins += EquipmentSystem.get_upgrade_coins_spent(material)
+			working_items.erase(material_uid)
+			generated_items.erase(material_uid)
+
+		var output_token: String = str(step.get("output_token", ""))
+		if output_token.is_empty() or working_items.has(output_token) or generated_items.has(output_token):
+			return {"success": false, "reason": "invalid_merge_plan"}
+		var target_id: String = str(step.get("target_id", ""))
+		if final_tokens.has(output_token):
+			var created_item: Dictionary = EquipmentSystem.create_instance(
+				target_id,
+				"item_%d" % next_uid,
+				1,
+				get_current_progress_stage()
+			)
+			if created_item.is_empty():
+				return {"success": false, "reason": "invalid_merge_plan"}
+			created_item["_auto_equipped_slot"] = str(final_token_slots.get(output_token, inherited_equipped_slot))
+			created_items.append(created_item.duplicate(true))
+			created_equipped_slots[str(created_item.get("uid", ""))] = str(created_item.get("_auto_equipped_slot", ""))
+			generated_items[output_token] = created_item
+			next_uid += 1
+		else:
+			var intermediate_item: Dictionary = EquipmentSystem.create_instance(target_id, output_token, 1, 0)
+			if intermediate_item.is_empty():
+				return {"success": false, "reason": "invalid_merge_plan"}
+			intermediate_item["_auto_created"] = true
+			intermediate_item["_auto_equipped_slot"] = inherited_equipped_slot
+			generated_items[output_token] = intermediate_item
+
+	var consumed_uids: Array[String] = []
+	for uid: String in consumed_original_uids.keys():
+		consumed_uids.append(uid)
+	consumed_uids.sort()
+	var remaining_inventory: Array = []
+	for raw_item: Variant in inventory:
+		if raw_item is Dictionary and not consumed_original_uids.has(str((raw_item as Dictionary).get("uid", ""))):
+			remaining_inventory.append((raw_item as Dictionary).duplicate(true))
+	for created_item: Dictionary in created_items:
+		remaining_inventory.append(created_item)
+
+	var equipped: Dictionary = player_state.get("equipped", {}).duplicate() if player_state.get("equipped", {}) is Dictionary else {}
+	for slot: String in EquipmentSystem.SLOTS:
+		if consumed_original_uids.has(str(equipped.get(slot, ""))):
+			equipped[slot] = ""
+	var replaced_slots: Array[String] = []
+	for created_item: Dictionary in created_items:
+		var created_slot: String = str(created_equipped_slots.get(str(created_item.get("uid", "")), ""))
+		if not created_slot.is_empty():
+			equipped[created_slot] = str(created_item.get("uid", ""))
+			replaced_slots.append(created_slot)
+		created_item.erase("_auto_equipped_slot")
+		created_item.erase("_auto_created")
+	for raw_item: Variant in remaining_inventory:
+		if raw_item is Dictionary:
+			(raw_item as Dictionary).erase("_auto_equipped_slot")
+			(raw_item as Dictionary).erase("_auto_created")
+
+	player_state["inventory"] = remaining_inventory
+	player_state["equipped"] = equipped
+	player_state["coins"] = get_coins() + refund_coins
+	player_state["next_item_uid"] = next_uid
+	_save_and_emit()
+	equipment_changed.emit()
+	var result: Dictionary = {
+		"success": true,
+		"consumed_uids": consumed_uids,
+		"final_outputs": created_items.duplicate(true),
+		"refund_coins": refund_coins,
+		"merge_count": steps.size(),
+		"replaced_equipped_slots": replaced_slots,
+		"plan": plan.duplicate(true)
+	}
+	return result
 
 func get_current_progress_stage() -> int:
 	return maxi(1, int(player_state.get("highest_completed_stage", 0)))
