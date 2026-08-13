@@ -12,12 +12,11 @@ server {
         return 200 "ok\n";
     }
 
-    location = /index.pck {
-        add_header Cache-Control "public, max-age=31536000, immutable";
-    }
-
-    location = /index.wasm {
-        add_header Cache-Control "public, max-age=31536000, immutable";
+    # Godot keeps stable index.* filenames between releases. Revalidate these
+    # files so a new deployment cannot be hidden by an old year-long cache;
+    # nginx will still return 304 when the local copy is current.
+    location ~ ^/index\.(html|js|wasm|pck)$ {
+        add_header Cache-Control "no-cache, must-revalidate";
     }
 
     location / {

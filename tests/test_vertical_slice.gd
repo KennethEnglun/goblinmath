@@ -590,7 +590,20 @@ func _test_project_settings() -> void:
 	var features: PackedStringArray = ProjectSettings.get_setting("application/config/features", PackedStringArray())
 	_check(str(ProjectSettings.get_setting("application/config/name", "")) == "哥布林升級中", "Project display name matches the game identity")
 	_check(ResourceLoader.exists(UITheme.BODY_FONT_PATH) and ResourceLoader.exists(UITheme.BOLD_FONT_PATH), "Rounded Traditional Chinese font weights are bundled for cross-platform UI")
-	_check(UITheme.shared_font(UITheme.FontRole.BODY) != null and UITheme.shared_font(UITheme.FontRole.BOLD) != null, "Rounded Traditional Chinese font weights load as Godot Font resources")
+	var body_font: Font = UITheme.shared_font(UITheme.FontRole.BODY)
+	var bold_font: Font = UITheme.shared_font(UITheme.FontRole.BOLD)
+	_check(body_font != null and bold_font != null, "Rounded Traditional Chinese font weights load as Godot Font resources")
+	var character_store_glyphs: String = "久享兔初勇又堅士外尾左探敏敢斥查永沉滑焰熊狐祝福穩竹聰草著術衛貓買購赤踏軀鈴鐺隊靠韌額騎龍"
+	var missing_body_glyphs: PackedStringArray = []
+	var missing_bold_glyphs: PackedStringArray = []
+	for index: int in range(character_store_glyphs.length()):
+		var codepoint: int = character_store_glyphs.unicode_at(index)
+		if body_font != null and not body_font.has_char(codepoint):
+			missing_body_glyphs.append(character_store_glyphs[index])
+		if bold_font != null and not bold_font.has_char(codepoint):
+			missing_bold_glyphs.append(character_store_glyphs[index])
+	_check(missing_body_glyphs.is_empty(), "Rounded body font covers all Traditional Chinese character-store prompts")
+	_check(missing_bold_glyphs.is_empty(), "Rounded bold font covers all Traditional Chinese character-store prompts")
 	var safe_area_probe: Control = Control.new()
 	get_tree().root.add_child(safe_area_probe)
 	var safe_insets: Vector4 = UITheme.safe_area_insets(safe_area_probe)
