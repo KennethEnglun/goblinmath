@@ -31,6 +31,8 @@ func _run() -> void:
 	await _capture_scene("start", Vector2i(1080, 1920))
 	await _capture_scene("map", Vector2i(1080, 1920))
 	await _capture_scene("character_profile", Vector2i(1080, 1920), "character", "profile")
+	await _capture_scene("character_selector", Vector2i(1080, 1920), "character", "selector")
+	await _capture_scene("character_purchase_confirm", Vector2i(1080, 1920), "character", "confirm")
 	await _capture_scene("character_equipment", Vector2i(1080, 1920), "character", "equipment")
 	await _capture_scene("character_bag", Vector2i(1080, 1920), "character", "bag")
 	await _capture_scene("gacha_summon", Vector2i(1080, 1920), "gacha", "summon")
@@ -39,6 +41,7 @@ func _run() -> void:
 	await _capture_scene("battle", Vector2i(1080, 1920))
 	await _capture_scene("mobile_start", Vector2i(405, 720), "start")
 	await _capture_scene("mobile_character", Vector2i(405, 720), "character", "equipment")
+	await _capture_scene("mobile_character_selector", Vector2i(405, 720), "character", "selector")
 	await _capture_scene("mobile_gacha", Vector2i(405, 720), "gacha", "summon")
 	await _capture_scene("mobile_battle", Vector2i(405, 720), "battle")
 	SaveManager.storage_path = original_save_path
@@ -60,6 +63,10 @@ func _capture_scene(file_stem: String, viewport_size: Vector2i, scene_key: Strin
 		inventory.append(EquipmentSystem.create_instance("leaf_cap", "visual_item_2", 1, 1))
 		inventory.append(EquipmentSystem.create_instance("traveler_shorts", "visual_item_3", 2, 1))
 		GameManager.player_state["inventory"] = inventory
+	if key == "character" and (mode == "selector" or mode == "confirm"):
+		GameManager.player_state["gems"] = GameBalance.BASE_GEMS
+		GameManager.player_state["unlocked_character_ids"] = [GameBalance.DEFAULT_CHARACTER_ID]
+		GameManager.player_state["selected_character_id"] = GameBalance.DEFAULT_CHARACTER_ID
 	if key == "gacha" and mode == "merge":
 		var merge_inventory: Array = GameManager.get_inventory()
 		merge_inventory.append(EquipmentSystem.create_instance("twig_club", "visual_merge_2", 1, 1))
@@ -82,7 +89,13 @@ func _capture_scene(file_stem: String, viewport_size: Vector2i, scene_key: Strin
 	viewport.add_child(scene)
 	await _wait_frames(8)
 	if key == "character":
-		scene.set_active_tab(mode)
+		if mode == "selector" or mode == "confirm":
+			scene.set_active_tab("profile")
+			scene._on_open_character_selector_pressed()
+			if mode == "confirm":
+				scene._on_character_card_action_pressed("rabbit_scout")
+		else:
+			scene.set_active_tab(mode)
 		await _wait_frames(30)
 	if key == "gacha":
 		if mode != "result":

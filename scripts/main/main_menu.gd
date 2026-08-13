@@ -4,7 +4,6 @@ extends Control
 const BACKGROUND_PATH: String = "res://assets/ui/start/start_background_v2.png"
 const EFFECTS_PATH: String = "res://assets/ui/start/start_effects_v2.png"
 const LOGO_PATH: String = "res://assets/ui/start/start_logo_v2.png"
-const GOBLIN_PATH: String = "res://assets/ui/start/goblin_start_v2.png"
 const BUTTON_PATH: String = "res://assets/ui/character/character_action_button_skin_v1.png"
 
 var start_button: BaseButton
@@ -22,7 +21,7 @@ func _ready() -> void:
 	call_deferred("_start_idle_animations")
 
 func _generated_assets_available() -> bool:
-	for path: String in [BACKGROUND_PATH, EFFECTS_PATH, LOGO_PATH, GOBLIN_PATH, BUTTON_PATH]:
+	for path: String in [BACKGROUND_PATH, EFFECTS_PATH, LOGO_PATH, GameManager.get_character_sprite_path(), BUTTON_PATH]:
 		if not ResourceLoader.exists(path):
 			return false
 	return true
@@ -51,7 +50,7 @@ func _build_layered_screen() -> void:
 	_place_layer(logo_layer, 0.03, 0.02, 0.97, 0.25)
 	layer_stage.add_child(logo_layer)
 
-	goblin_layer = _make_texture_rect(GOBLIN_PATH, TextureRect.STRETCH_KEEP_ASPECT_CENTERED)
+	goblin_layer = _make_texture_rect(GameManager.get_character_sprite_path(), TextureRect.STRETCH_KEEP_ASPECT_CENTERED)
 	goblin_layer.name = "GoblinLayer"
 	_place_layer(goblin_layer, 0.17, 0.27, 0.83, 0.72)
 	layer_stage.add_child(goblin_layer)

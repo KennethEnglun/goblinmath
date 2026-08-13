@@ -19,6 +19,7 @@ func _run_tests() -> void:
 	_test_save_recovery_and_persistence()
 	_test_bounded_endless_metadata()
 	_test_character_progression()
+	_test_character_store()
 	_test_equipment_actions()
 	_test_gacha_system()
 	_test_project_settings()
@@ -37,6 +38,11 @@ func _test_assets_and_authored_data() -> void:
 		"res://assets/ui/start/start_effects_v2.png",
 		"res://assets/ui/start/start_logo_v2.png",
 		"res://assets/ui/start/goblin_start_v2.png",
+		"res://assets/characters/playable/goblin_rabbit_scout_v1.png",
+		"res://assets/characters/playable/goblin_fox_mage_v1.png",
+		"res://assets/characters/playable/goblin_panda_guardian_v1.png",
+		"res://assets/characters/playable/goblin_cat_knight_v1.png",
+		"res://assets/characters/playable/goblin_dragon_champion_v1.png",
 		"res://assets/ui/start/start_adventure_button_v2.png",
 		"res://assets/fonts/ChironGoRoundTC-500M.woff2",
 		"res://assets/fonts/ChironGoRoundTC-700B.woff2",
@@ -237,7 +243,8 @@ func _test_save_migration() -> void:
 		"owned_equipment": ["twig_club", "bad_item", "twig_club"],
 		"equipped_weapon": "twig_club"
 	})
-	_check(int(normalized.get("save_version", 0)) == SaveManager.SAVE_VERSION and SaveManager.SAVE_VERSION == 7, "Old saves migrate to the current version")
+	_check(int(normalized.get("save_version", 0)) == SaveManager.SAVE_VERSION and SaveManager.SAVE_VERSION == 8, "Old saves migrate to the current version")
+	_check(normalized.get("unlocked_character_ids", []) == [GameBalance.DEFAULT_CHARACTER_ID] and str(normalized.get("selected_character_id", "")) == GameBalance.DEFAULT_CHARACTER_ID, "Old saves receive the free starter character")
 	_check(int(normalized.get("stat_points_total", -1)) == 2, "Migrated saves retain the total level-earned stat points")
 	_check(int((normalized.get("stat_points_spent", {}) as Dictionary).get("attack", 0)) == 1, "Migrated saves reconstruct legacy attack allocation points")
 	_check(int(normalized.get("gems", 0)) == GameBalance.BASE_GEMS, "Migrated saves receive the one-time gacha introduction gems")
@@ -401,6 +408,47 @@ func _test_character_progression() -> void:
 	_check(GameManager.get_total_stat_points() == total_stat_points_before_spend and GameManager.get_stat_points() == total_stat_points_before_spend - 1, "Spending a point keeps the total stat point count visible")
 	var attack_breakdown: Dictionary = GameManager.get_stat_breakdown().get("attack", {})
 	_check(int(attack_breakdown.get("total", 0)) == GameManager.get_attack() and int(attack_breakdown.get("allocated_points", 0)) == 1 and int(attack_breakdown.get("allocated_value", 0)) == 1, "Stat breakdown reports the allocated attack point and final total")
+
+func _test_character_store() -> void:
+	var catalog: Array = GameManager.get_all_characters()
+	_check(catalog.size() == 6, "Character catalog contains the starter and five animal heroes")
+	var expected_prices: Array[int] = [300, 600, 900, 1400, 2200]
+	var actual_prices: Array[int] = []
+	for character: Dictionary in catalog:
+		var character_id: String = str(character.get("id", ""))
+		_check(ResourceLoader.exists(str(character.get("sprite", ""))), "Character sprite imports: %s" % character_id)
+		if character_id != GameBalance.DEFAULT_CHARACTER_ID:
+			actual_prices.append(int(character.get("price_gems", 0)))
+			_check(GameManager.get_effective_character_price(character_id) == 0, "Character test price is free: %s" % character_id)
+	_check(actual_prices == expected_prices, "Production character prices increase from 300 to 2200 gems")
+
+	var malformed: Dictionary = SaveManager._normalize_save({
+		"unlocked_character_ids": ["rabbit_scout", "missing", "rabbit_scout"],
+		"selected_character_id": "missing"
+	})
+	_check(malformed.get("unlocked_character_ids", []) == [GameBalance.DEFAULT_CHARACTER_ID, "rabbit_scout"], "Character migration removes unknown and duplicate unlock ids")
+	_check(str(malformed.get("selected_character_id", "")) == GameBalance.DEFAULT_CHARACTER_ID, "Character migration falls back from an invalid selection")
+
+	GameManager.player_state = SaveManager.create_new_save()
+	GameManager.player_state["level"] = 4
+	GameManager.player_state["stat_points"] = 2
+	var shared_inventory: Array = GameManager.get_inventory()
+	var shared_equipped: Dictionary = GameManager.player_state.get("equipped", {}).duplicate(true)
+	var gems_before: int = GameManager.get_gems()
+	var invalid_snapshot: Dictionary = GameManager.player_state.duplicate(true)
+	_check(not bool(GameManager.purchase_character("missing").get("success", false)) and GameManager.player_state == invalid_snapshot, "Invalid character purchases leave state untouched")
+	_check(not GameManager.select_character("cat_knight") and GameManager.player_state == invalid_snapshot, "Locked characters cannot be selected")
+
+	var purchase: Dictionary = GameManager.purchase_character("rabbit_scout")
+	_check(bool(purchase.get("success", false)) and int(purchase.get("price", -1)) == 0, "Free test purchase succeeds without a hidden cost")
+	_check(GameManager.get_gems() == gems_before and GameManager.is_character_unlocked("rabbit_scout"), "Free test purchase unlocks permanently without spending gems")
+	_check(str(GameManager.get_selected_character().get("id", "")) == "rabbit_scout" and GameManager.get_character_sprite_path().ends_with("goblin_rabbit_scout_v1.png"), "Purchased character becomes the selected global sprite")
+	_check(GameManager.get_level() == 4 and GameManager.get_stat_points() == 2 and GameManager.get_inventory() == shared_inventory and GameManager.player_state.get("equipped", {}) == shared_equipped, "Character purchases preserve shared progression, inventory, and equipment")
+	var rabbit_breakdown: Dictionary = GameManager.get_stat_breakdown()
+	_check(int((rabbit_breakdown.get("luck", {}) as Dictionary).get("character", 0)) == 1 and GameManager.get_luck() == 1, "Selected character bonus is included in totals and stat breakdown")
+	var duplicate_snapshot: Dictionary = GameManager.player_state.duplicate(true)
+	_check(not bool(GameManager.purchase_character("rabbit_scout").get("success", false)) and GameManager.player_state == duplicate_snapshot, "Duplicate character purchases do not charge or mutate state")
+	_check(GameManager.select_character(GameBalance.DEFAULT_CHARACTER_ID) and GameManager.get_character_bonus() == {"attack": 0, "max_hp": 0, "defense": 0, "luck": 0}, "Owned starter character can be reselected and clears passive bonuses")
 
 func _test_equipment_actions() -> void:
 	GameManager.player_state = SaveManager.create_new_save()

@@ -2,8 +2,6 @@ extends Control
 
 ## Answer correctly to attack; wrong answers let the monster strike back.
 const MAX_ANSWER_DIGITS: int = 6
-const PLAYER_SPRITE_PATH: String = "res://assets/ui/start/goblin_start_v2.png"
-const PLAYER_FALLBACK_SPRITE_PATH: String = "res://assets/characters/goblin_placeholder.svg"
 const BATTLE_BACKGROUND_BY_ZONE: Dictionary = {
 	"flower_meadow": "res://assets/ui/battle/battle_flower_meadow_bg_v1.png",
 	"sakura_woods": "res://assets/ui/battle/battle_sakura_woods_bg_v1.png",
@@ -318,9 +316,7 @@ func _add_battle_ground() -> void:
 	add_child(battle_ground_layer)
 
 func _get_player_sprite_path() -> String:
-	if ResourceLoader.exists(PLAYER_SPRITE_PATH):
-		return PLAYER_SPRITE_PATH
-	return PLAYER_FALLBACK_SPRITE_PATH
+	return GameManager.get_character_sprite_path()
 
 func _make_sprite(path: String, sprite_size: Vector2) -> TextureRect:
 	var sprite: TextureRect = TextureRect.new()

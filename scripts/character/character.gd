@@ -17,11 +17,11 @@ const BAG_ACTION_COLUMN_WIDTH: float = 220.0
 const BAG_ACTION_BUTTON_SIZE: Vector2 = Vector2(220, 96)
 const BAG_ACTION_GAP: int = 8
 const BAG_ACTION_STACK_HEIGHT: float = 304.0
+const CHARACTER_CARD_WIDTH: float = 286.0
+const CHARACTER_CARD_HEIGHT: float = 630.0
 
 const BACKGROUND_PATH: String = "res://assets/ui/character/character_upgrade_bg_v1.png"
 const AMBIENT_PATH: String = "res://assets/ui/start/start_effects_v2.png"
-const PLAYER_PATH: String = "res://assets/ui/start/goblin_start_v2.png"
-const PLAYER_FALLBACK_PATH: String = "res://assets/characters/goblin_placeholder.svg"
 const PANEL_SKIN_PATH: String = "res://assets/ui/character/character_panel_skin_v1.png"
 const TAB_SKIN_PATH: String = "res://assets/ui/character/character_tab_skin_v1.png"
 const ACTION_BUTTON_SKIN_PATH: String = "res://assets/ui/character/character_action_button_skin_v1.png"
@@ -79,6 +79,11 @@ var character_tab_layer: Control
 var character_toast_layer: Control
 var character_action_layer: Control
 var character_equipment_layer: Control
+var character_selector_layer: Control
+var character_selector_panel: Panel
+var character_card_row: HBoxContainer
+var purchase_confirm_layer: Control
+var purchase_confirm_label: Label
 
 var profile_portrait: TextureRect
 var equipment_portrait: TextureRect
@@ -106,6 +111,9 @@ var inventory_count_label: Label
 var inventory_sort_button: Button
 var equipment_bonus_label: Label
 var message_label: Label
+var choose_character_button: Button
+var character_selector_currency_label: Label
+var pending_character_purchase_id: String = ""
 
 func _ready() -> void:
 	set_process_input(true)
@@ -114,6 +122,8 @@ func _ready() -> void:
 	call_deferred("_play_page_entrance")
 
 func _input(event: InputEvent) -> void:
+	if character_selector_layer != null and character_selector_layer.visible:
+		return
 	var active_scroll: ScrollContainer = _get_active_scroll()
 	if active_scroll == null or not is_instance_valid(active_scroll):
 		return
@@ -148,6 +158,7 @@ func _build_screen() -> void:
 	_build_hud()
 	_build_tabs()
 	_build_tab_contents()
+	_build_character_selector()
 	set_active_tab(TAB_PROFILE)
 
 func _build_visual_layers() -> void:
@@ -300,7 +311,12 @@ func _build_tab_contents() -> void:
 
 	profile_content = _make_stack("ProfileContent")
 	profile_scroll.add_child(profile_content)
-	profile_content.add_child(UITheme.make_spacer(320))
+	profile_content.add_child(UITheme.make_spacer(340))
+	choose_character_button = _make_small_button("選擇主角\nCHOOSE HERO", Color("#f5d9df"), Vector2(0, 104), ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["profile"]))
+	choose_character_button.name = "OpenCharacterSelectorButton"
+	choose_character_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	choose_character_button.pressed.connect(_on_open_character_selector_pressed)
+	profile_content.add_child(choose_character_button)
 	profile_content.add_child(_make_profile_summary())
 	character_action_layer = _make_profile_actions()
 	profile_content.add_child(character_action_layer)
@@ -382,6 +398,227 @@ func _build_tab_contents() -> void:
 	message_label.size = Vector2(988, 64)
 	character_toast_layer.add_child(message_label)
 
+func _build_character_selector() -> void:
+	character_selector_layer = Control.new()
+	character_selector_layer.name = "CharacterSelectorLayer"
+	character_selector_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	character_selector_layer.mouse_filter = Control.MOUSE_FILTER_STOP
+	character_selector_layer.z_index = 100
+	add_child(character_selector_layer)
+
+	var dim: ColorRect = ColorRect.new()
+	dim.name = "CharacterSelectorDim"
+	dim.color = Color(0.20, 0.12, 0.14, 0.72)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	character_selector_layer.add_child(dim)
+
+	character_selector_panel = UITheme.make_panel(Color(1.0, 0.98, 0.93, 0.99), Color("#d98d9d"), 38, 5)
+	character_selector_panel.name = "CharacterSelectorPanel"
+	character_selector_panel.position = Vector2(52, 176 + character_top_offset)
+	character_selector_panel.size = Vector2(976, maxf(1080.0, 1180.0 - character_top_offset * 0.5))
+	character_selector_layer.add_child(character_selector_panel)
+	var margin: MarginContainer = _panel_margin(character_selector_panel, 30)
+	var stack: VBoxContainer = VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 18)
+	margin.add_child(stack)
+
+	var header: HBoxContainer = HBoxContainer.new()
+	header.custom_minimum_size = Vector2(0, 112)
+	header.add_theme_constant_override("separation", 12)
+	stack.add_child(header)
+	var title: VBoxContainer = UITheme.make_zh_en_label("選擇主角", "CHOOSE YOUR HERO", 34, 14, UITheme.INK)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(title)
+	character_selector_currency_label = UITheme.make_label("", 21, Color("#9b6d31"), UITheme.FontRole.BOLD)
+	character_selector_currency_label.name = "CharacterSelectorCurrencyLabel"
+	character_selector_currency_label.custom_minimum_size = Vector2(190, 96)
+	header.add_child(character_selector_currency_label)
+	var close_button: Button = _make_small_button("關閉\nCLOSE", Color("#f1e4df"), Vector2(140, 96), ACTION_BUTTON_SKIN_PATH, "")
+	close_button.name = "CloseCharacterSelectorButton"
+	close_button.pressed.connect(_on_close_character_selector_pressed)
+	header.add_child(close_button)
+
+	var intro: Label = UITheme.make_label("角色共享等級、配點與裝備；選中的主角會提供專屬能力加成。", 20, UITheme.MUTED_INK)
+	intro.custom_minimum_size = Vector2(0, 62)
+	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	stack.add_child(intro)
+
+	var card_scroll: ScrollContainer = ScrollContainer.new()
+	card_scroll.name = "CharacterCardScroll"
+	card_scroll.custom_minimum_size = Vector2(0, 670)
+	card_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	card_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	card_scroll.scroll_deadzone = 18
+	card_scroll.follow_focus = true
+	stack.add_child(card_scroll)
+	character_card_row = HBoxContainer.new()
+	character_card_row.name = "CharacterCardRow"
+	character_card_row.add_theme_constant_override("separation", 14)
+	card_scroll.add_child(character_card_row)
+
+	var hint: Label = UITheme.make_label("左右滑動查看更多角色  ·  購買後永久解鎖", 19, UITheme.MUTED_INK, UITheme.FontRole.BOLD)
+	hint.custom_minimum_size = Vector2(0, 54)
+	stack.add_child(hint)
+	_build_purchase_confirmation()
+	character_selector_layer.visible = false
+
+func _build_purchase_confirmation() -> void:
+	purchase_confirm_layer = Control.new()
+	purchase_confirm_layer.name = "CharacterPurchaseConfirmLayer"
+	purchase_confirm_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	purchase_confirm_layer.mouse_filter = Control.MOUSE_FILTER_STOP
+	purchase_confirm_layer.z_index = 10
+	character_selector_layer.add_child(purchase_confirm_layer)
+	var dim: ColorRect = ColorRect.new()
+	dim.color = Color(0.18, 0.10, 0.12, 0.68)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	purchase_confirm_layer.add_child(dim)
+	var panel: Panel = UITheme.make_panel(Color("#fff9ee"), Color("#d98d9d"), 34, 5)
+	panel.name = "CharacterPurchaseConfirmPanel"
+	panel.position = Vector2(186, 650 + character_top_offset * 0.35)
+	panel.size = Vector2(708, 470)
+	purchase_confirm_layer.add_child(panel)
+	var margin: MarginContainer = _panel_margin(panel, 34)
+	var stack: VBoxContainer = VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 18)
+	margin.add_child(stack)
+	stack.add_child(UITheme.make_zh_en_label("確認解鎖", "UNLOCK HERO", 31, 14, UITheme.INK))
+	purchase_confirm_label = UITheme.make_label("", 23, UITheme.MUTED_INK, UITheme.FontRole.BOLD)
+	purchase_confirm_label.name = "CharacterPurchaseConfirmLabel"
+	purchase_confirm_label.custom_minimum_size = Vector2(0, 170)
+	purchase_confirm_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	stack.add_child(purchase_confirm_label)
+	var actions: HBoxContainer = HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 16)
+	stack.add_child(actions)
+	var cancel_button: Button = _make_small_button("取消\nCANCEL", Color("#eee6df"), Vector2(0, 104), ACTION_BUTTON_SKIN_PATH, "")
+	cancel_button.name = "CancelCharacterPurchaseButton"
+	cancel_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cancel_button.pressed.connect(_on_cancel_character_purchase_pressed)
+	actions.add_child(cancel_button)
+	var confirm_button: Button = _make_small_button("確認解鎖\nUNLOCK", Color("#f6c7cf"), Vector2(0, 104), ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["profile"]))
+	confirm_button.name = "ConfirmCharacterPurchaseButton"
+	confirm_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	confirm_button.pressed.connect(_on_confirm_character_purchase_pressed)
+	actions.add_child(confirm_button)
+	purchase_confirm_layer.visible = false
+
+func _make_character_card(character: Dictionary) -> Panel:
+	var character_id: String = str(character.get("id", ""))
+	var selected_id: String = str(GameManager.player_state.get("selected_character_id", GameBalance.DEFAULT_CHARACTER_ID))
+	var selected: bool = character_id == selected_id
+	var unlocked: bool = GameManager.is_character_unlocked(character_id)
+	var fill: Color = Color("#f9dce2") if selected else Color("#fff9ed")
+	var border: Color = Color("#d98d9d") if selected else Color("#dfc8a8")
+	var card: Panel = UITheme.make_panel(fill, border, 28, 4)
+	card.name = "CharacterCard_%s" % character_id
+	card.custom_minimum_size = Vector2(CHARACTER_CARD_WIDTH, CHARACTER_CARD_HEIGHT)
+	var margin: MarginContainer = _panel_margin(card, 16)
+	var stack: VBoxContainer = VBoxContainer.new()
+	stack.alignment = BoxContainer.ALIGNMENT_CENTER
+	stack.add_theme_constant_override("separation", 8)
+	margin.add_child(stack)
+	var portrait: TextureRect = _make_sprite(str(character.get("sprite", "")), Vector2(250, 250))
+	portrait.name = "CharacterCardPortrait_%s" % character_id
+	portrait.custom_minimum_size = Vector2(250, 250)
+	portrait.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	stack.add_child(portrait)
+	var name_label: VBoxContainer = UITheme.make_zh_en_label(str(character.get("name_zh", "主角")), str(character.get("name", "HERO")), 25, 12, UITheme.INK)
+	name_label.custom_minimum_size = Vector2(0, 72)
+	stack.add_child(name_label)
+	var bonus_label: Label = UITheme.make_label(_format_character_bonus(character.get("bonuses", {})), 18, UITheme.MUTED_INK, UITheme.FontRole.BOLD)
+	bonus_label.name = "CharacterCardBonus_%s" % character_id
+	bonus_label.custom_minimum_size = Vector2(0, 58)
+	bonus_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	stack.add_child(bonus_label)
+	var price: int = GameManager.get_effective_character_price(character_id)
+	var price_text: String = "使用中" if selected else ("已擁有" if unlocked else "%d 鑽石" % price)
+	if not unlocked and price == 0 and DataManager.is_character_test_price_enabled():
+		price_text = "測試免費 · 0 鑽石"
+	var price_label: Label = UITheme.make_label(price_text, 19, Color("#9b6d31"), UITheme.FontRole.BOLD)
+	price_label.name = "CharacterCardPrice_%s" % character_id
+	price_label.custom_minimum_size = Vector2(0, 42)
+	stack.add_child(price_label)
+	var action_text: String = "使用中\nSELECTED" if selected else ("使用角色\nSELECT" if unlocked else "購買並使用\nUNLOCK")
+	var action_color: Color = Color("#eadfd8") if selected else (Color("#dcebdc") if unlocked else Color("#f6c7cf"))
+	var action_button: Button = _make_small_button(action_text, action_color, Vector2(250, 98), ACTION_BUTTON_SKIN_PATH, "")
+	action_button.name = "CharacterAction_%s" % character_id
+	action_button.disabled = selected
+	action_button.pressed.connect(_on_character_card_action_pressed.bind(character_id))
+	stack.add_child(action_button)
+	return card
+
+func _refresh_character_selector() -> void:
+	if character_card_row == null:
+		return
+	character_selector_currency_label.text = "%d 鑽石\nGEMS" % GameManager.get_gems()
+	_clear_children(character_card_row)
+	for character: Dictionary in GameManager.get_all_characters():
+		character_card_row.add_child(_make_character_card(character))
+
+func _format_character_bonus(raw_bonuses: Variant) -> String:
+	if not raw_bonuses is Dictionary:
+		return "無額外加成"
+	var bonuses: Dictionary = raw_bonuses as Dictionary
+	var parts: PackedStringArray = []
+	for spec: Array in [["attack", "ATK"], ["max_hp", "HP"], ["defense", "DEF"], ["luck", "LUCK"]]:
+		var value: int = maxi(0, int(bonuses.get(str(spec[0]), 0)))
+		if value > 0:
+			parts.append("%s +%d" % [str(spec[1]), value])
+	return "無額外加成" if parts.is_empty() else "  ·  ".join(parts)
+
+func _on_open_character_selector_pressed() -> void:
+	pending_character_purchase_id = ""
+	purchase_confirm_layer.visible = false
+	_refresh_character_selector()
+	character_selector_layer.visible = true
+	character_selector_panel.pivot_offset = character_selector_panel.size * 0.5
+	character_selector_panel.modulate.a = 0.0
+	character_selector_panel.scale = Vector2(0.97, 0.97)
+	var tween: Tween = create_tween().set_parallel(true)
+	tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(character_selector_panel, "modulate:a", 1.0, 0.18)
+	tween.tween_property(character_selector_panel, "scale", Vector2.ONE, 0.18)
+
+func _on_close_character_selector_pressed() -> void:
+	pending_character_purchase_id = ""
+	purchase_confirm_layer.visible = false
+	character_selector_layer.visible = false
+
+func _on_character_card_action_pressed(character_id: String) -> void:
+	if GameManager.is_character_unlocked(character_id):
+		if GameManager.select_character(character_id):
+			_refresh_all("已選用 %s" % str(GameManager.get_selected_character().get("name_zh", "主角")))
+			_refresh_character_selector()
+		return
+	var character: Dictionary = DataManager.get_character(character_id)
+	if character.is_empty():
+		return
+	pending_character_purchase_id = character_id
+	var price: int = GameManager.get_effective_character_price(character_id)
+	var price_text: String = "測試期間免費（0 鑽石）" if price == 0 and DataManager.is_character_test_price_enabled() else "%d 鑽石" % price
+	purchase_confirm_label.text = "解鎖「%s」並立即使用？\n費用：%s\n目前持有：%d 鑽石" % [str(character.get("name_zh", "主角")), price_text, GameManager.get_gems()]
+	purchase_confirm_layer.visible = true
+
+func _on_cancel_character_purchase_pressed() -> void:
+	pending_character_purchase_id = ""
+	purchase_confirm_layer.visible = false
+
+func _on_confirm_character_purchase_pressed() -> void:
+	if pending_character_purchase_id.is_empty():
+		return
+	var result: Dictionary = GameManager.purchase_character(pending_character_purchase_id)
+	if not bool(result.get("success", false)):
+		var reason: String = str(result.get("reason", "purchase_failed"))
+		message_label.text = "鑽石不足" if reason == "not_enough_gems" else "無法解鎖角色"
+		return
+	pending_character_purchase_id = ""
+	purchase_confirm_layer.visible = false
+	_refresh_all("角色已解鎖並選用")
+	_refresh_character_selector()
+
 func _make_profile_summary() -> Panel:
 	var summary: Panel = UITheme.make_panel(Color(1, 0.97, 0.92, 0.96), Color("#dd9ba7"), 34, 5)
 	summary.name = "ProfileSummaryPanel"
@@ -425,15 +662,15 @@ func _make_profile_summary() -> Panel:
 func _make_stat_summary_tile(stat: String, chinese: String, english: String) -> Panel:
 	var tile: Panel = UITheme.make_panel(Color(1.0, 0.99, 0.95, 0.72), Color("#ead2b4"), 18, 2)
 	tile.name = "ProfileStat_%s" % stat
-	tile.custom_minimum_size = Vector2(0, 108)
+	tile.custom_minimum_size = Vector2(0, 126)
 	tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var icon: TextureRect = _make_sprite(str(ICON_PATHS.get(stat, "")), Vector2(54, 54))
-	icon.position = Vector2(16, 27)
+	icon.position = Vector2(16, 36)
 	tile.add_child(icon)
-	var value: Label = UITheme.make_label("", 22, UITheme.INK, UITheme.FontRole.BOLD)
+	var value: Label = UITheme.make_label("", 20, UITheme.INK, UITheme.FontRole.BOLD)
 	value.name = "ProfileStatValue_%s" % stat
-	value.position = Vector2(78, 12)
-	value.size = Vector2(350, 84)
+	value.position = Vector2(78, 10)
+	value.size = Vector2(350, 106)
 	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	value.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	value.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -645,9 +882,30 @@ func _play_tab_transition(scroll: ScrollContainer) -> void:
 	tween.tween_property(scroll, "position:x", target_x, 0.16)
 	tween.tween_property(scroll, "modulate:a", 1.0, 0.16)
 
+func _refresh_character_portraits() -> void:
+	var sprite_path: String = GameManager.get_character_sprite_path()
+	if not ResourceLoader.exists(sprite_path):
+		return
+	var texture: Texture2D = load(sprite_path) as Texture2D
+	if texture == null:
+		return
+	for portrait: TextureRect in [profile_portrait, equipment_portrait]:
+		if portrait == null or portrait.texture == texture:
+			continue
+		portrait.texture = texture
+		if not is_inside_tree():
+			continue
+		portrait.modulate.a = 0.0
+		portrait.scale = Vector2(0.97, 0.97)
+		var tween: Tween = create_tween().set_parallel(true)
+		tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tween.tween_property(portrait, "modulate:a", 1.0, 0.16)
+		tween.tween_property(portrait, "scale", Vector2.ONE, 0.16)
+
 func _refresh_all(message: String = "") -> void:
 	if level_label == null:
 		return
+	_refresh_character_portraits()
 	level_label.text = "等級 %d  ·  第 %d 章" % [GameManager.get_level(), GameBalance.chapter_for_stage(int(GameManager.player_state.get("unlocked_stage", 1)))]
 	exp_label.text = "經驗值 %d / %d  ·  EXP" % [GameManager.get_exp(), GameManager.get_required_exp()]
 	exp_progress.max_value = maxf(1.0, float(GameManager.get_required_exp()))
@@ -664,6 +922,9 @@ func _refresh_all(message: String = "") -> void:
 	points_label.text = "可用 %d 點  ·  累計獲得 %d 點" % [available_stat_points, total_stat_points]
 	inventory_count_label.text = "背包 %d / ∞\nBAG CAPACITY" % GameManager.get_inventory().size()
 	coin_label.text = "%d  鑽石\n%d  金幣" % [GameManager.get_gems(), GameManager.get_coins()]
+	if choose_character_button != null:
+		var selected_character: Dictionary = GameManager.get_selected_character()
+		UITheme.set_dual_button_text(choose_character_button, "選擇主角 · %s" % str(selected_character.get("name_zh", "主角")), "CHOOSE HERO")
 	message_label.text = message
 	_refresh_equipment_slots()
 	_refresh_inventory()
@@ -674,13 +935,14 @@ func _refresh_stat_summary(stat_breakdown: Dictionary) -> void:
 		var label: Label = stat_summary_labels[stat] as Label
 		var data: Dictionary = stat_breakdown.get(stat, {})
 		if label != null:
-			label.text = "%s %d  ·  %s\n等級 %d  +  加點 %d  +  裝備 %d" % [
+			label.text = "%s %d  ·  %s\n等級 %d  +  加點 %d\n裝備 %d  +  角色 %d" % [
 				str(label.get_meta("zh", "")),
 				int(data.get("total", 0)),
 				str(label.get_meta("en", "")),
 				int(data.get("level", 0)),
 				int(data.get("allocated_value", 0)),
-				int(data.get("equipment", 0))
+				int(data.get("equipment", 0)),
+				int(data.get("character", 0))
 			]
 
 func _refresh_equipment_bonus_grid(stats: Dictionary) -> void:
@@ -702,12 +964,13 @@ func _format_stat_breakdown(stat_breakdown: Dictionary) -> String:
 	for spec: Array in specs:
 		var stat: String = str(spec[0])
 		var data: Dictionary = stat_breakdown.get(stat, {})
-		lines.append("%s %d（等級 %d + 加點 %d + 裝備 %d）" % [
+		lines.append("%s %d（等級 %d + 加點 %d + 裝備 %d + 角色 %d）" % [
 			str(spec[1]),
 			int(data.get("total", 0)),
 			int(data.get("level", 0)),
 			int(data.get("allocated_value", 0)),
-			int(data.get("equipment", 0))
+			int(data.get("equipment", 0)),
+			int(data.get("character", 0))
 		])
 	return "\n".join(lines)
 
@@ -1069,7 +1332,7 @@ func _make_sprite(path: String, sprite_size: Vector2) -> TextureRect:
 	return sprite
 
 func _get_player_sprite_path() -> String:
-	return PLAYER_PATH if ResourceLoader.exists(PLAYER_PATH) else PLAYER_FALLBACK_PATH
+	return GameManager.get_character_sprite_path()
 
 func _panel_margin(panel: Panel, margin_value: int) -> MarginContainer:
 	var margin: MarginContainer = MarginContainer.new()

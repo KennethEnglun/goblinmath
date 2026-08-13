@@ -4,8 +4,6 @@ extends Control
 const BACKGROUND_PATH: String = "res://assets/ui/gacha/gacha_background_v1.png"
 const AMBIENT_PATH: String = "res://assets/ui/gacha/gacha_ambient_effects_v1.png"
 const SHARED_AMBIENT_PATH: String = "res://assets/ui/start/start_effects_v2.png"
-const PLAYER_PATH: String = "res://assets/ui/start/goblin_start_v2.png"
-const PLAYER_FALLBACK_PATH: String = "res://assets/characters/goblin_placeholder.svg"
 const SUMMON_PEDESTAL_PATH: String = "res://assets/ui/gacha/gacha_summon_pedestal_v1.png"
 const SUMMON_CIRCLE_PATH: String = "res://assets/ui/gacha/gacha_summon_circle_v1.png"
 const PANEL_SKIN_PATH: String = "res://assets/ui/gacha/gacha_panel_skin_v1.png"
@@ -1117,7 +1115,7 @@ func _make_sprite(path: String, sprite_size: Vector2) -> TextureRect:
 	return sprite
 
 func _get_player_sprite_path() -> String:
-	return PLAYER_PATH if ResourceLoader.exists(PLAYER_PATH) else PLAYER_FALLBACK_PATH
+	return GameManager.get_character_sprite_path()
 
 func _panel_margin(panel: Panel, margin_value: int) -> MarginContainer:
 	var margin: MarginContainer = MarginContainer.new()

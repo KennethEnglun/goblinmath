@@ -13,6 +13,7 @@ const BASE_EXP: int = 0
 const BASE_COINS: int = 0
 const BASE_GEMS: int = 300
 const STARTING_STAGE: int = 1
+const DEFAULT_CHARACTER_ID: String = "sprout_goblin"
 
 const STAGES_PER_CHAPTER: int = 10
 # A practical guard against corrupt saves while remaining effectively endless.

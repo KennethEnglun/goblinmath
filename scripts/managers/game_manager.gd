@@ -5,6 +5,7 @@ signal player_state_changed(state: Dictionary)
 signal stage_unlocked(stage_id: int)
 signal battle_completed(result: Dictionary)
 signal equipment_changed()
+signal character_changed(character_id: String)
 signal scene_transition_completed(scene_path: String)
 
 const MAIN_MENU_SCENE: String = "res://scenes/main/main_menu.tscn"
@@ -12,6 +13,8 @@ const WORLD_MAP_SCENE: String = "res://scenes/map/world_map.tscn"
 const BATTLE_SCENE: String = "res://scenes/battle/battle.tscn"
 const CHARACTER_SCENE: String = "res://scenes/character/character.tscn"
 const GACHA_SCENE: String = "res://scenes/gacha/gacha.tscn"
+const DEFAULT_PLAYER_SPRITE_PATH: String = "res://assets/ui/start/goblin_start_v2.png"
+const PLAYER_FALLBACK_SPRITE_PATH: String = "res://assets/characters/goblin_placeholder.svg"
 const SCENE_FADE_DURATION: float = 0.08
 
 var player_state: Dictionary = {}
@@ -118,6 +121,101 @@ func get_coins() -> int:
 func get_gems() -> int:
 	return maxi(0, int(player_state.get("gems", GameBalance.BASE_GEMS)))
 
+func get_all_characters() -> Array:
+	return DataManager.get_all_characters()
+
+func get_selected_character() -> Dictionary:
+	var character_id: String = str(player_state.get("selected_character_id", GameBalance.DEFAULT_CHARACTER_ID))
+	var character: Dictionary = DataManager.get_character(character_id)
+	if character.is_empty():
+		character = DataManager.get_character(GameBalance.DEFAULT_CHARACTER_ID)
+	return character
+
+func get_character_sprite_path() -> String:
+	var character: Dictionary = get_selected_character()
+	var sprite_path: String = str(character.get("sprite", DEFAULT_PLAYER_SPRITE_PATH))
+	if ResourceLoader.exists(sprite_path):
+		return sprite_path
+	if ResourceLoader.exists(DEFAULT_PLAYER_SPRITE_PATH):
+		return DEFAULT_PLAYER_SPRITE_PATH
+	return PLAYER_FALLBACK_SPRITE_PATH
+
+func get_character_bonus() -> Dictionary:
+	var character: Dictionary = get_selected_character()
+	var raw_bonuses: Variant = character.get("bonuses", {})
+	var result: Dictionary = {"attack": 0, "max_hp": 0, "defense": 0, "luck": 0}
+	if raw_bonuses is Dictionary:
+		for stat: String in result.keys():
+			result[stat] = maxi(0, int((raw_bonuses as Dictionary).get(stat, 0)))
+	return result
+
+func get_effective_character_price(character_id: String) -> int:
+	var character: Dictionary = DataManager.get_character(character_id)
+	if character.is_empty():
+		return -1
+	if DataManager.is_character_test_price_enabled():
+		return maxi(0, int(character.get("test_price_gems", character.get("price_gems", 0))))
+	return maxi(0, int(character.get("price_gems", 0)))
+
+func get_unlocked_character_ids() -> Array[String]:
+	var result: Array[String] = []
+	var raw_ids: Variant = player_state.get("unlocked_character_ids", [GameBalance.DEFAULT_CHARACTER_ID])
+	if raw_ids is Array:
+		for raw_id: Variant in raw_ids:
+			var character_id: String = str(raw_id)
+			if not character_id.is_empty() and not result.has(character_id):
+				result.append(character_id)
+	if not result.has(GameBalance.DEFAULT_CHARACTER_ID):
+		result.push_front(GameBalance.DEFAULT_CHARACTER_ID)
+	return result
+
+func is_character_unlocked(character_id: String) -> bool:
+	return not DataManager.get_character(character_id).is_empty() and get_unlocked_character_ids().has(character_id)
+
+func purchase_character(character_id: String) -> Dictionary:
+	var character: Dictionary = DataManager.get_character(character_id)
+	if character.is_empty():
+		return {"success": false, "reason": "invalid_character"}
+	if is_character_unlocked(character_id):
+		return {"success": false, "reason": "already_unlocked"}
+	var price: int = get_effective_character_price(character_id)
+	if price < 0:
+		return {"success": false, "reason": "invalid_price"}
+	if get_gems() < price:
+		return {"success": false, "reason": "not_enough_gems", "price": price}
+	var previous_state: Dictionary = player_state.duplicate(true)
+	var unlocked: Array[String] = get_unlocked_character_ids()
+	unlocked.append(character_id)
+	player_state["unlocked_character_ids"] = unlocked
+	player_state["selected_character_id"] = character_id
+	player_state["gems"] = get_gems() - price
+	if not _save_and_emit():
+		player_state = previous_state
+		_emit_state_changed()
+		return {"success": false, "reason": "save_failed"}
+	character_changed.emit(character_id)
+	return {
+		"success": true,
+		"character": get_selected_character(),
+		"character_id": character_id,
+		"price": price,
+		"gems": get_gems()
+	}
+
+func select_character(character_id: String) -> bool:
+	if not is_character_unlocked(character_id):
+		return false
+	if str(player_state.get("selected_character_id", GameBalance.DEFAULT_CHARACTER_ID)) == character_id:
+		return true
+	var previous_state: Dictionary = player_state.duplicate(true)
+	player_state["selected_character_id"] = character_id
+	if not _save_and_emit():
+		player_state = previous_state
+		_emit_state_changed()
+		return false
+	character_changed.emit(character_id)
+	return true
+
 func get_stat_points() -> int:
 	return int(player_state.get("stat_points", 0))
 
@@ -164,20 +262,21 @@ func get_equipped_stats() -> Dictionary:
 	return EquipmentSystem.aggregate_equipped_stats(player_state)
 
 func get_attack() -> int:
-	return maxi(1, get_base_attack() + int(get_equipped_stats().get("attack", 0)))
+	return maxi(1, get_base_attack() + int(get_equipped_stats().get("attack", 0)) + int(get_character_bonus().get("attack", 0)))
 
 func get_max_hp() -> int:
-	return maxi(1, int(player_state.get("base_max_hp", GameBalance.BASE_MAX_HP)) + int(get_equipped_stats().get("max_hp", 0)))
+	return maxi(1, int(player_state.get("base_max_hp", GameBalance.BASE_MAX_HP)) + int(get_equipped_stats().get("max_hp", 0)) + int(get_character_bonus().get("max_hp", 0)))
 
 func get_defense() -> int:
-	return maxi(0, int(player_state.get("base_defense", GameBalance.BASE_DEFENSE)) + int(get_equipped_stats().get("defense", 0)))
+	return maxi(0, int(player_state.get("base_defense", GameBalance.BASE_DEFENSE)) + int(get_equipped_stats().get("defense", 0)) + int(get_character_bonus().get("defense", 0)))
 
 func get_luck() -> int:
-	return maxi(0, int(player_state.get("base_luck", GameBalance.BASE_LUCK)) + int(get_equipped_stats().get("luck", 0)))
+	return maxi(0, int(player_state.get("base_luck", GameBalance.BASE_LUCK)) + int(get_equipped_stats().get("luck", 0)) + int(get_character_bonus().get("luck", 0)))
 
 func get_stat_breakdown() -> Dictionary:
 	var spent: Dictionary = get_stat_points_spent()
 	var equipped: Dictionary = get_equipped_stats()
+	var character_bonus: Dictionary = get_character_bonus()
 	var level: int = maxi(GameBalance.BASE_LEVEL, get_level())
 	var level_attack: int = GameBalance.BASE_ATTACK + ((level - GameBalance.BASE_LEVEL) * GameBalance.LEVEL_ATTACK_GAIN)
 	var level_max_hp: int = GameBalance.BASE_MAX_HP + ((level - GameBalance.BASE_LEVEL) * GameBalance.LEVEL_HP_GAIN)
@@ -187,28 +286,32 @@ func get_stat_breakdown() -> Dictionary:
 			"level": level_attack,
 			"allocated_points": int(spent.get("attack", 0)),
 			"allocated_value": int(spent.get("attack", 0)),
-			"equipment": int(equipped.get("attack", 0))
+			"equipment": int(equipped.get("attack", 0)),
+			"character": int(character_bonus.get("attack", 0))
 		},
 		"max_hp": {
 			"total": get_max_hp(),
 			"level": level_max_hp,
 			"allocated_points": int(spent.get("max_hp", 0)),
 			"allocated_value": int(spent.get("max_hp", 0)) * 3,
-			"equipment": int(equipped.get("max_hp", 0))
+			"equipment": int(equipped.get("max_hp", 0)),
+			"character": int(character_bonus.get("max_hp", 0))
 		},
 		"defense": {
 			"total": get_defense(),
 			"level": GameBalance.BASE_DEFENSE,
 			"allocated_points": int(spent.get("defense", 0)),
 			"allocated_value": int(spent.get("defense", 0)),
-			"equipment": int(equipped.get("defense", 0))
+			"equipment": int(equipped.get("defense", 0)),
+			"character": int(character_bonus.get("defense", 0))
 		},
 		"luck": {
 			"total": get_luck(),
 			"level": GameBalance.BASE_LUCK,
 			"allocated_points": int(spent.get("luck", 0)),
 			"allocated_value": int(spent.get("luck", 0)),
-			"equipment": int(equipped.get("luck", 0))
+			"equipment": int(equipped.get("luck", 0)),
+			"character": int(character_bonus.get("luck", 0))
 		}
 	}
 

@@ -1,0 +1,78 @@
+{
+  "test_price_enabled": true,
+  "characters": [
+    {
+      "id": "sprout_goblin",
+      "name": "Sprout Goblin",
+      "name_zh": "嫩芽哥布林",
+      "description_zh": "帶著木棒踏上旅程的初始冒險者。",
+      "animal": "adventurer",
+      "sprite": "res://assets/ui/start/goblin_start_v2.png",
+      "bonuses": {},
+      "price_gems": 0,
+      "test_price_gems": 0,
+      "sort_order": 0,
+      "unlocked_by_default": true
+    },
+    {
+      "id": "rabbit_scout",
+      "name": "Bunny Scout",
+      "name_zh": "兔兔斥候",
+      "description_zh": "幸運草會為每一次探險帶來好運。",
+      "animal": "rabbit",
+      "sprite": "res://assets/characters/playable/goblin_rabbit_scout_v1.png",
+      "bonuses": {"luck": 1},
+      "price_gems": 300,
+      "test_price_gems": 0,
+      "sort_order": 1
+    },
+    {
+      "id": "fox_mage",
+      "name": "Red-Tail Fox Mage",
+      "name_zh": "赤尾狐術士",
+      "description_zh": "敏捷又聰明，能把算式化成更強攻擊。",
+      "animal": "fox",
+      "sprite": "res://assets/characters/playable/goblin_fox_mage_v1.png",
+      "bonuses": {"attack": 2},
+      "price_gems": 600,
+      "test_price_gems": 0,
+      "sort_order": 2
+    },
+    {
+      "id": "panda_guardian",
+      "name": "Bamboo Panda Guardian",
+      "name_zh": "竹葉熊貓守衛",
+      "description_zh": "沉穩可靠，以堅韌身軀守護冒險隊。",
+      "animal": "panda",
+      "sprite": "res://assets/characters/playable/goblin_panda_guardian_v1.png",
+      "bonuses": {"max_hp": 6, "defense": 1},
+      "price_gems": 900,
+      "test_price_gems": 0,
+      "sort_order": 3
+    },
+    {
+      "id": "cat_knight",
+      "name": "Bell Cat Knight",
+      "name_zh": "鈴鐺貓騎士",
+      "description_zh": "勇敢的鈴鐺騎士，攻守與幸運同時提升。",
+      "animal": "cat",
+      "sprite": "res://assets/characters/playable/goblin_cat_knight_v1.png",
+      "bonuses": {"attack": 2, "max_hp": 3, "luck": 1},
+      "price_gems": 1400,
+      "test_price_gems": 0,
+      "sort_order": 4
+    },
+    {
+      "id": "dragon_champion",
+      "name": "Starflame Dragon Champion",
+      "name_zh": "星焰小龍勇者",
+      "description_zh": "星焰祝福全面強化力量、生命與守護。",
+      "animal": "dragon",
+      "sprite": "res://assets/characters/playable/goblin_dragon_champion_v1.png",
+      "bonuses": {"attack": 3, "max_hp": 6, "defense": 2, "luck": 2},
+      "price_gems": 2200,
+      "test_price_gems": 0,
+      "sort_order": 5
+    }
+  ]
+}

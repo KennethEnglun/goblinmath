@@ -24,6 +24,7 @@ func _run_flow() -> void:
 	await _test_stage_node_signal()
 	await _test_actual_map_to_battle_transition()
 	await _test_character_screen()
+	await _test_selected_character_surfaces()
 	await _test_gacha_screen()
 	await _test_battle_zone_backgrounds()
 	await _test_non_scripted_battle()
@@ -241,7 +242,7 @@ func _test_character_screen() -> void:
 		var character_coin_badge: Control = character.find_child("CoinBadge", true, false) as Control
 		_check(merge_entry_button != null and merge_entry_button.pressed.is_connected(Callable(character, "_on_merge_pressed")), "Character screen exposes a wired MERGE shortcut")
 		_check(gacha_entry_button != null and character_coin_badge != null and merge_entry_button != null and not gacha_entry_button.get_global_rect().intersects(merge_entry_button.get_global_rect()) and not merge_entry_button.get_global_rect().intersects(character_coin_badge.get_global_rect()), "Character header shortcuts and currency badge do not overlap")
-		for layer_name: String in ["CharacterBackgroundLayer", "CharacterAmbientLayer", "CharacterGoblinLayer", "CharacterPanelLayer", "CharacterEquipmentLayer", "CharacterHudLayer", "CharacterTabLayer", "CharacterActionLayer", "CharacterToastLayer"]:
+		for layer_name: String in ["CharacterBackgroundLayer", "CharacterAmbientLayer", "CharacterGoblinLayer", "CharacterPanelLayer", "CharacterEquipmentLayer", "CharacterHudLayer", "CharacterTabLayer", "CharacterActionLayer", "CharacterToastLayer", "CharacterSelectorLayer"]:
 			_check(character.find_child(layer_name, true, false) != null, "Character screen exposes independent %s" % layer_name)
 		_check(character.find_child("CharacterBackgroundFallback", true, false) != null or character.character_background_layer.texture != null, "Character screen keeps a background fallback when art is unavailable")
 		_check(character.character_ambient_layer.texture != null, "Character screen reuses the shared ambient effect layer")
@@ -278,6 +279,8 @@ func _test_character_screen() -> void:
 		var character_font: Font = character.level_label.get_theme_font("font")
 		_check(character_font != null and character_font.resource_path.contains("ChironGoRoundTC"), "Character dynamic labels use the bundled rounded CJK font")
 		_check(character.profile_scroll.visible and not character.equipment_scroll.visible and not character.bag_scroll.visible, "PROFILE is the only visible tab at startup")
+		var choose_character_button: Button = character.find_child("OpenCharacterSelectorButton", true, false) as Button
+		_check(choose_character_button != null and choose_character_button.custom_minimum_size.y >= 96.0, "PROFILE exposes a touch-safe character selector entry")
 		var starter_art: TextureRect = character.find_child("EquipmentArtSprite", true, false) as TextureRect
 		_check(starter_art != null and starter_art.texture != null and starter_art.texture.resource_path.ends_with("twig_club_v1.png"), "Character equipment UI uses the template-specific starter art")
 		var tab_bar: Control = character.find_child("CharacterTabBar", true, false) as Control
@@ -285,6 +288,27 @@ func _test_character_screen() -> void:
 		_check(tab_bar != null and profile_summary != null and not tab_bar.get_global_rect().intersects(character.profile_portrait.get_global_rect()), "PROFILE tab bar stays clear of the goblin portrait")
 		_check(profile_summary != null and not profile_summary.get_global_rect().intersects(character.profile_portrait.get_global_rect()), "PROFILE summary panel stays clear of the goblin portrait")
 		var state_before_tabs: Dictionary = GameManager.player_state.duplicate(true)
+		if viewport_size == Vector2i(1080, 1920):
+			var state_before_cancel: Dictionary = GameManager.player_state.duplicate(true)
+			character._on_open_character_selector_pressed()
+			await _wait_frames(3)
+			var selector_panel: Control = character.find_child("CharacterSelectorPanel", true, false) as Control
+			var character_cards: HBoxContainer = character.find_child("CharacterCardRow", true, false) as HBoxContainer
+			_check(character.character_selector_layer.visible and selector_panel != null and character_cards != null and character_cards.get_child_count() == 6, "Character selector opens with all six heroes")
+			for card: Control in character_cards.get_children():
+				var action: Button = card.find_child("CharacterAction_*", true, false) as Button
+				_check(action != null and action.custom_minimum_size.x >= 96.0 and action.custom_minimum_size.y >= 96.0, "Character cards expose touch-safe purchase or select actions")
+			character._on_character_card_action_pressed("rabbit_scout")
+			_check(character.purchase_confirm_layer.visible, "Locked character action opens the purchase confirmation")
+			character._on_cancel_character_purchase_pressed()
+			_check(not character.purchase_confirm_layer.visible and GameManager.player_state == state_before_cancel, "Cancelling a character purchase leaves state untouched")
+			character._on_character_card_action_pressed("rabbit_scout")
+			character._on_confirm_character_purchase_pressed()
+			await _wait_frames(3)
+			_check(GameManager.is_character_unlocked("rabbit_scout") and str(GameManager.get_selected_character().get("id", "")) == "rabbit_scout" and GameManager.get_gems() == int(state_before_cancel.get("gems", 0)), "Confirming a free test purchase unlocks and selects without spending gems")
+			_check(character.profile_portrait.texture != null and character.profile_portrait.texture.resource_path.ends_with("goblin_rabbit_scout_v1.png"), "Character selector refreshes the profile portrait immediately")
+			character._on_close_character_selector_pressed()
+			state_before_tabs = GameManager.player_state.duplicate(true)
 		character.set_active_tab("equipment")
 		_check(not character.profile_scroll.visible and character.equipment_scroll.visible and not character.bag_scroll.visible, "EQUIPMENT tab switches independently")
 		_check(character.equipment_row.get_child_count() == 3, "EQUIPMENT renders weapon, head, and body slots")
@@ -554,6 +578,41 @@ func _test_battle_zone_backgrounds() -> void:
 		_check(_uses_chiron_font(battle.question_label), "Battle question uses the bundled rounded font")
 		battle.queue_free()
 		await _wait_frames(1)
+
+func _test_selected_character_surfaces() -> void:
+	GameManager.player_state = SaveManager.create_new_save()
+	GameManager.player_state["unlocked_character_ids"] = [GameBalance.DEFAULT_CHARACTER_ID, "dragon_champion"]
+	GameManager.player_state["selected_character_id"] = "dragon_champion"
+	GameManager.player_state["current_stage"] = 1
+	GameManager.player_state["unlocked_stage"] = 1
+	var scenes: Array = [
+		["start", "res://scenes/main/main_menu.tscn"],
+		["map", "res://scenes/map/world_map.tscn"],
+		["gacha", "res://scenes/gacha/gacha.tscn"],
+		["battle", "res://scenes/battle/battle.tscn"]
+	]
+	for spec: Array in scenes:
+		var key: String = str(spec[0])
+		var viewport: SubViewport = SubViewport.new()
+		viewport.name = "SelectedCharacterViewport_%s" % key
+		viewport.size = Vector2i(1080, 1920)
+		get_tree().root.add_child(viewport)
+		var scene: Control = (load(str(spec[1])) as PackedScene).instantiate() as Control
+		viewport.add_child(scene)
+		await _wait_frames(5)
+		var sprite: TextureRect
+		match key:
+			"start":
+				sprite = scene.goblin_layer
+			"map":
+				sprite = scene.player_marker
+			"gacha":
+				sprite = scene.goblin_sprite
+			"battle":
+				sprite = scene.player_sprite
+		_check(sprite != null and sprite.texture != null and sprite.texture.resource_path.ends_with("goblin_dragon_champion_v1.png"), "Selected character appears on the %s surface" % key)
+		viewport.queue_free()
+		await _wait_frames(2)
 
 func _test_gacha_screen() -> void:
 	var gacha_scene: PackedScene = load("res://scenes/gacha/gacha.tscn")

@@ -5,6 +5,7 @@ const STAGES_PATH: String = "res://data/stages.json"
 const MONSTERS_PATH: String = "res://data/monsters.json"
 const EQUIPMENT_PATH: String = "res://data/equipment.json"
 const GACHA_PATH: String = "res://data/gacha.json"
+const CHARACTERS_PATH: String = "res://data/characters.json"
 
 const MAP_POSITIONS: Array[Vector2i] = [
 	Vector2i(500, 4250),
@@ -30,6 +31,8 @@ var stages: Dictionary = {}
 var monsters: Dictionary = {}
 var equipment: Dictionary = {}
 var gacha_config: Dictionary = {}
+var character_config: Dictionary = {}
+var characters: Dictionary = {}
 
 func _ready() -> void:
 	load_all()
@@ -39,6 +42,9 @@ func load_all() -> void:
 	monsters = _index_by_id(_load_json_array(MONSTERS_PATH), false)
 	equipment = _index_by_id(_load_json_array(EQUIPMENT_PATH), false)
 	gacha_config = _load_json_dictionary(GACHA_PATH)
+	character_config = _load_json_dictionary(CHARACTERS_PATH)
+	var character_entries: Variant = character_config.get("characters", [])
+	characters = _index_by_id(character_entries if character_entries is Array else [], false)
 
 func get_stage(stage_id: int) -> Dictionary:
 	if stage_id < GameBalance.STARTING_STAGE or stage_id > GameBalance.MAX_STAGE_ID:
@@ -89,6 +95,26 @@ func get_all_equipment() -> Array:
 
 func get_gacha_config() -> Dictionary:
 	return _copy_or_empty(gacha_config)
+
+func get_character(character_id: String) -> Dictionary:
+	return _copy_or_empty(characters.get(character_id, {}))
+
+func get_all_characters() -> Array:
+	var result: Array = []
+	for raw_character: Variant in characters.values():
+		if raw_character is Dictionary:
+			result.append((raw_character as Dictionary).duplicate(true))
+	result.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var order_a: int = int(a.get("sort_order", 0))
+		var order_b: int = int(b.get("sort_order", 0))
+		if order_a == order_b:
+			return str(a.get("id", "")) < str(b.get("id", ""))
+		return order_a < order_b
+	)
+	return result
+
+func is_character_test_price_enabled() -> bool:
+	return bool(character_config.get("test_price_enabled", false))
 
 func _generate_endless_stage(stage_id: int) -> Dictionary:
 	var chapter: int = GameBalance.chapter_for_stage(stage_id)

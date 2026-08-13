@@ -1,7 +1,7 @@
 extends Node
 
 ## Versioned local persistence with migration, normalization, and a backup file.
-const SAVE_VERSION: int = 7
+const SAVE_VERSION: int = 8
 const SAVE_PATH: String = "user://save.json"
 
 var current_data: Dictionary = {}
@@ -18,6 +18,8 @@ func create_new_save() -> Dictionary:
 		"exp": GameBalance.BASE_EXP,
 		"coins": GameBalance.BASE_COINS,
 		"gems": GameBalance.BASE_GEMS,
+		"unlocked_character_ids": [GameBalance.DEFAULT_CHARACTER_ID],
+		"selected_character_id": GameBalance.DEFAULT_CHARACTER_ID,
 		"stat_points": 0,
 		"stat_points_total": 0,
 		"stat_points_spent": {"attack": 0, "max_hp": 0, "defense": 0, "luck": 0},
@@ -162,6 +164,12 @@ func _normalize_save(raw: Dictionary) -> Dictionary:
 	normalized["base_max_hp"] = maxi(1, _to_int(normalized["base_max_hp"], GameBalance.BASE_MAX_HP))
 	normalized["base_defense"] = maxi(0, _to_int(normalized["base_defense"], GameBalance.BASE_DEFENSE))
 	normalized["base_luck"] = maxi(0, _to_int(normalized["base_luck"], GameBalance.BASE_LUCK))
+	var unlocked_characters: Array[String] = _normalize_unlocked_characters(raw.get("unlocked_character_ids", normalized["unlocked_character_ids"]))
+	normalized["unlocked_character_ids"] = unlocked_characters
+	var selected_character_id: String = str(raw.get("selected_character_id", normalized["selected_character_id"]))
+	if not unlocked_characters.has(selected_character_id) or DataManager.get_character(selected_character_id).is_empty():
+		selected_character_id = GameBalance.DEFAULT_CHARACTER_ID
+	normalized["selected_character_id"] = selected_character_id
 	if not raw.has("base_max_hp"):
 		normalized["base_max_hp"] = GameBalance.BASE_MAX_HP + ((int(normalized["level"]) - 1) * GameBalance.LEVEL_HP_GAIN)
 	if not raw.has("base_attack"):
@@ -206,6 +214,18 @@ func _normalize_save(raw: Dictionary) -> Dictionary:
 	normalized["total_correct_answers"] = mini(correct_answers, question_count)
 	normalized["total_mistakes"] = mini(mistakes, question_count - int(normalized["total_correct_answers"]))
 	return normalized
+
+func _normalize_unlocked_characters(raw_unlocked: Variant) -> Array[String]:
+	var unlocked: Array[String] = [GameBalance.DEFAULT_CHARACTER_ID]
+	if raw_unlocked is Array:
+		for raw_id: Variant in raw_unlocked:
+			var character_id: String = str(raw_id)
+			if character_id.is_empty() or unlocked.has(character_id):
+				continue
+			if DataManager.get_character(character_id).is_empty():
+				continue
+			unlocked.append(character_id)
+	return unlocked
 
 func _normalize_stat_points_spent(raw: Dictionary, normalized: Dictionary) -> Dictionary:
 	var level: int = maxi(GameBalance.BASE_LEVEL, int(normalized.get("level", GameBalance.BASE_LEVEL)))

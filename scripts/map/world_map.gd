@@ -5,7 +5,6 @@ const MAP_SIZE: Vector2 = Vector2(1080, 4608)
 const SEGMENT_HEIGHT: float = 1536.0
 const MAP_DRAG_THRESHOLD: float = 12.0
 const STAGE_NODE_SCRIPT = preload("res://scripts/map/stage_node.gd")
-const GOBLIN_MARKER_PATH: String = "res://assets/ui/start/goblin_start_v2.png"
 const START_EFFECTS_PATH: String = "res://assets/ui/start/start_effects_v2.png"
 
 const BACKGROUNDS: Dictionary = {
@@ -336,11 +335,12 @@ func _has_any_generated_foreground() -> bool:
 
 func _build_player_marker() -> void:
 	var marker_stage: Dictionary = DataManager.get_stage(_highest_unlocked_stage_on_page())
-	if marker_stage.is_empty() or not ResourceLoader.exists(GOBLIN_MARKER_PATH):
+	var character_sprite_path: String = GameManager.get_character_sprite_path()
+	if marker_stage.is_empty() or not ResourceLoader.exists(character_sprite_path):
 		return
 	player_marker = TextureRect.new()
 	player_marker.name = "CurrentGoblinMarker"
-	player_marker.texture = load(GOBLIN_MARKER_PATH)
+	player_marker.texture = load(character_sprite_path)
 	player_marker.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	player_marker.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	player_marker.size = Vector2(176, 176)
