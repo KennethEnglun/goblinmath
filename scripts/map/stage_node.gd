@@ -16,6 +16,7 @@ var stage_id: int = 0
 var stage_status: StringName = &"locked"
 var stage_button: BaseButton
 var glow: Control
+var glow_tween: Tween
 var pointer_down: bool = false
 var pointer_dragged: bool = false
 var pointer_press_position: Vector2 = Vector2.ZERO
@@ -91,6 +92,9 @@ func _build(stage_data: Dictionary) -> void:
 	if stage_status == &"current":
 		call_deferred("_start_current_animation")
 
+func _exit_tree() -> void:
+	stop_animation()
+
 func _make_stage_button(is_boss: bool) -> BaseButton:
 	var texture_path: String = BOSS_TEXTURE if is_boss else BASE_TEXTURE
 	if ResourceLoader.exists(texture_path):
@@ -164,9 +168,12 @@ func _add_badge(texture_path: String, fallback_text: String, color: Color, at: V
 	add_child(badge)
 
 func _start_current_animation() -> void:
-	if glow != null:
+	if not is_inside_tree():
+		return
+	stop_animation()
+	if glow != null and is_instance_valid(glow):
 		glow.pivot_offset = glow.size * 0.5
-		var glow_tween: Tween = create_tween().set_loops()
+		glow_tween = create_tween().set_loops()
 		glow_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 		glow_tween.set_parallel(true)
 		glow_tween.tween_property(glow, "scale", Vector2(1.06, 1.06), 1.0)
@@ -176,6 +183,11 @@ func _start_current_animation() -> void:
 		glow_tween.tween_property(glow, "modulate:a", 1.0, 1.0)
 	if stage_button != null:
 		stage_button.pivot_offset = stage_button.size * 0.5
+
+func stop_animation() -> void:
+	if glow_tween != null and glow_tween.is_valid():
+		glow_tween.kill()
+	glow_tween = null
 
 func _on_pressed() -> void:
 	# Scroll gestures can pass through a child button. Do not turn the release

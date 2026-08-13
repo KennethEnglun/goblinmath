@@ -46,6 +46,10 @@ var map_top_margin: float = 70.0
 var map_bottom_margin: float = 42.0
 var initial_focus_stage: int = 0
 var world_name_label: Label
+var chapter_switch_busy: bool = false
+var chapter_build_id: int = 0
+var zone_shimmer_tween: Tween
+var player_marker_tween: Tween
 
 func _ready() -> void:
 	initial_focus_stage = maxi(0, int(GameManager.map_focus_stage))
@@ -60,8 +64,14 @@ func _ready() -> void:
 	_load_chapter(current_chapter)
 	set_process_input(true)
 
+func _exit_tree() -> void:
+	# Invalidate any deferred scroll callback before the map leaves the tree.
+	chapter_build_id += 1
+	chapter_switch_busy = true
+	_stop_map_animations()
+
 func _input(event: InputEvent) -> void:
-	if scroll_container == null or not is_instance_valid(scroll_container):
+	if chapter_switch_busy or scroll_container == null or not is_instance_valid(scroll_container):
 		return
 	if event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
 		var mouse_event: InputEventMouseButton = event as InputEventMouseButton
@@ -153,15 +163,36 @@ func _build_screen() -> void:
 	scrollbar.value_changed.connect(_on_scroll_value_changed)
 
 func _load_chapter(chapter: int) -> void:
-	current_chapter = maxi(1, chapter)
-	world_stages = DataManager.get_stages_for_chapter(current_chapter)
-	if world_stages.is_empty():
-		push_warning("Chapter %d could not be generated." % current_chapter)
+	if chapter_switch_busy:
 		return
+	var requested_chapter: int = maxi(1, chapter)
+	var requested_stages: Array = DataManager.get_stages_for_chapter(requested_chapter)
+	if requested_stages.is_empty():
+		push_warning("Chapter %d could not be generated; keeping the current map." % requested_chapter)
+		return
+
+	chapter_switch_busy = true
+	chapter_build_id += 1
+	var build_id: int = chapter_build_id
+	_refresh_chapter_navigation()
+	_stop_map_animations()
 	for layer: Control in [map_background_layer, zone_effects_layer, path_layer, decoration_back_layer, stage_node_layer, player_marker_layer, decoration_front_layer]:
 		_clear_layer(layer)
 	stage_nodes.clear()
 	player_marker = null
+
+	# queue_free() releases the old controls at the end of the frame. Do not
+	# allocate the next full map page until that release has completed; this is
+	# especially important for the Web renderer's texture memory budget.
+	await get_tree().process_frame
+	if build_id != chapter_build_id or not is_inside_tree():
+		if is_inside_tree():
+			chapter_switch_busy = false
+			_refresh_chapter_navigation()
+		return
+
+	current_chapter = requested_chapter
+	world_stages = requested_stages
 	_build_backgrounds()
 	_build_zone_effects()
 	_build_path()
@@ -170,8 +201,10 @@ func _load_chapter(chapter: int) -> void:
 	_build_foregrounds()
 	_build_player_marker()
 	_refresh_progress()
+	chapter_switch_busy = false
 	_refresh_chapter_navigation()
-	call_deferred("_scroll_to_current_stage")
+	call_deferred("_start_marker_animation_for_build", build_id)
+	call_deferred("_scroll_to_current_stage", build_id)
 
 func _make_map_layer(layer_name: String) -> Control:
 	var layer: Control = Control.new()
@@ -184,6 +217,8 @@ func _make_map_layer(layer_name: String) -> Control:
 
 func _clear_layer(layer: Control) -> void:
 	for child: Node in layer.get_children():
+		if child.has_method("stop_animation"):
+			child.call("stop_animation")
 		layer.remove_child(child)
 		child.queue_free()
 
@@ -228,10 +263,10 @@ func _build_zone_effects() -> void:
 		stars.modulate.a = 0.26
 		stars.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		zone_effects_layer.add_child(stars)
-		var shimmer: Tween = create_tween().set_loops()
-		shimmer.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-		shimmer.tween_property(stars, "modulate:a", 0.42, 1.6)
-		shimmer.tween_property(stars, "modulate:a", 0.26, 1.6)
+		zone_shimmer_tween = create_tween().set_loops()
+		zone_shimmer_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		zone_shimmer_tween.tween_property(stars, "modulate:a", 0.42, 1.6)
+		zone_shimmer_tween.tween_property(stars, "modulate:a", 0.26, 1.6)
 
 	for index: int in range(12):
 		var petal: Label = UITheme.make_label("•", 34 + (index % 3) * 5, Color(1.0, 0.72, 0.8, 0.55))
@@ -347,7 +382,6 @@ func _build_player_marker() -> void:
 	player_marker.position = _stage_position(marker_stage) + Vector2(-88, -255)
 	player_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	player_marker_layer.add_child(player_marker)
-	call_deferred("_start_marker_animation")
 
 func _build_fixed_hud() -> void:
 	fixed_hud_layer = Control.new()
@@ -480,10 +514,10 @@ func _refresh_progress() -> void:
 
 func _refresh_chapter_navigation() -> void:
 	if previous_button != null:
-		previous_button.disabled = current_chapter <= 1
+		previous_button.disabled = chapter_switch_busy or current_chapter <= 1
 	if next_button != null:
 		var next_first_stage: int = GameBalance.first_stage_for_chapter(current_chapter + 1)
-		next_button.disabled = next_first_stage > int(GameManager.player_state.get("unlocked_stage", 1))
+		next_button.disabled = chapter_switch_busy or next_first_stage > int(GameManager.player_state.get("unlocked_stage", 1))
 
 func _on_stage_selected(stage_id: int) -> void:
 	if not GameManager.is_stage_unlocked(stage_id):
@@ -504,21 +538,31 @@ func _on_gacha_pressed() -> void:
 	GameManager.go_to_gacha()
 
 func _on_previous_chapter_pressed() -> void:
-	if current_chapter <= 1:
+	if chapter_switch_busy or current_chapter <= 1:
 		return
 	AudioManager.play_sfx("button_click")
 	_load_chapter(current_chapter - 1)
 
 func _on_next_chapter_pressed() -> void:
+	if chapter_switch_busy:
+		return
 	var next_first_stage: int = GameBalance.first_stage_for_chapter(current_chapter + 1)
 	if next_first_stage > int(GameManager.player_state.get("unlocked_stage", 1)):
 		return
 	AudioManager.play_sfx("button_click")
 	_load_chapter(current_chapter + 1)
 
-func _scroll_to_current_stage() -> void:
+func _scroll_to_current_stage(build_id: int) -> void:
+	if build_id != chapter_build_id or not is_inside_tree():
+		return
 	await get_tree().process_frame
+	if build_id != chapter_build_id or not is_inside_tree():
+		return
 	await get_tree().process_frame
+	if build_id != chapter_build_id or not is_inside_tree():
+		return
+	if world_stages.is_empty():
+		return
 	var target_stage_id: int = _highest_unlocked_stage_on_page()
 	if initial_focus_stage > 0:
 		for stage: Dictionary in world_stages:
@@ -552,6 +596,8 @@ func _world_name_for_chapter(chapter: int) -> String:
 	return "花漾原野" if chapter <= 1 else "花漾原野・第%d章" % chapter
 
 func _highest_unlocked_stage_on_page() -> int:
+	if world_stages.is_empty():
+		return GameBalance.STARTING_STAGE
 	var requested: int = int(GameManager.player_state.get("unlocked_stage", GameBalance.STARTING_STAGE))
 	for index: int in range(world_stages.size() - 1, -1, -1):
 		var stage_id: int = int(world_stages[index].get("id", GameBalance.STARTING_STAGE))
@@ -566,18 +612,36 @@ func _stage_position(stage: Dictionary) -> Vector2:
 	return MAP_SIZE * 0.5
 
 func _start_marker_animation() -> void:
-	if player_marker == null or not is_instance_valid(player_marker):
+	_start_marker_animation_for_build(chapter_build_id)
+
+func _start_marker_animation_for_build(build_id: int) -> void:
+	if build_id != chapter_build_id or not is_inside_tree() or player_marker == null or not is_instance_valid(player_marker):
 		return
+	if player_marker_tween != null and player_marker_tween.is_valid():
+		player_marker_tween.kill()
 	player_marker.pivot_offset = player_marker.size * 0.5
 	var origin_y: float = player_marker.position.y
-	var marker_tween: Tween = create_tween().set_loops()
-	marker_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	marker_tween.set_parallel(true)
-	marker_tween.tween_property(player_marker, "position:y", origin_y - 10.0, 1.1)
-	marker_tween.tween_property(player_marker, "scale", Vector2(1.025, 1.025), 1.1)
-	marker_tween.chain().set_parallel(true)
-	marker_tween.tween_property(player_marker, "position:y", origin_y, 1.1)
-	marker_tween.tween_property(player_marker, "scale", Vector2.ONE, 1.1)
+	player_marker_tween = create_tween().set_loops()
+	player_marker_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	player_marker_tween.set_parallel(true)
+	player_marker_tween.tween_property(player_marker, "position:y", origin_y - 10.0, 1.1)
+	player_marker_tween.tween_property(player_marker, "scale", Vector2(1.025, 1.025), 1.1)
+	player_marker_tween.chain().set_parallel(true)
+	player_marker_tween.tween_property(player_marker, "position:y", origin_y, 1.1)
+	player_marker_tween.tween_property(player_marker, "scale", Vector2.ONE, 1.1)
+
+func _stop_map_animations() -> void:
+	if zone_shimmer_tween != null and zone_shimmer_tween.is_valid():
+		zone_shimmer_tween.kill()
+	zone_shimmer_tween = null
+	if player_marker_tween != null and player_marker_tween.is_valid():
+		player_marker_tween.kill()
+	player_marker_tween = null
+	if stage_node_layer == null:
+		return
+	for child: Node in stage_node_layer.get_children():
+		if child.has_method("stop_animation"):
+			child.call("stop_animation")
 
 func _add_soft_shape(parent: Control, at: Vector2, shape_size: Vector2, color: Color, radius: int) -> void:
 	var shape: Panel = Panel.new()

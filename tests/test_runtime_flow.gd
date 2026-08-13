@@ -20,6 +20,7 @@ func _run_flow() -> void:
 	await _test_world_map(1)
 	await _test_world_map(2)
 	await _test_endless_chapter_map()
+	await _test_chapter_navigation_rebuild()
 	await _test_boss_map_focus()
 	await _test_stage_node_signal()
 	await _test_actual_map_to_battle_transition()
@@ -161,6 +162,70 @@ func _test_endless_chapter_map() -> void:
 	_check(not world_map.previous_button.disabled and world_map.next_button.disabled, "Chapter navigation respects unlocked progress")
 	viewport.queue_free()
 	await _wait_frames(1)
+
+func _test_chapter_navigation_rebuild() -> void:
+	GameManager.player_state = SaveManager.create_new_save()
+	GameManager.player_state["highest_completed_stage"] = 10
+	GameManager.player_state["unlocked_stage"] = 11
+	GameManager.player_state["current_stage"] = 11
+	GameManager.map_focus_stage = 10
+	var viewport: SubViewport = SubViewport.new()
+	viewport.name = "ChapterNavigationViewport"
+	viewport.size = Vector2i(1080, 1920)
+	get_tree().root.add_child(viewport)
+	var world_map: Control = load("res://scenes/map/world_map.tscn").instantiate() as Control
+	viewport.add_child(world_map)
+	await _wait_frames(8)
+	var stage_layer: Control = world_map.get_node_or_null("WorldMapScroll/MapContent/StageNodeLayer") as Control
+	var old_stage_one: Node = stage_layer.get_node_or_null("StageNode1") if stage_layer != null else null
+	_check(int(world_map.current_chapter) == 1 and not world_map.next_button.disabled, "Completed World 1 enables Next Chapter")
+
+	# Repeated presses in the same frame must be coalesced into one rebuild.
+	world_map._on_next_chapter_pressed()
+	world_map._on_next_chapter_pressed()
+	world_map._on_next_chapter_pressed()
+	_check(world_map.chapter_switch_busy, "Chapter navigation locks while the map is rebuilding")
+	await _wait_frames(8)
+	stage_layer = world_map.get_node_or_null("WorldMapScroll/MapContent/StageNodeLayer") as Control
+	_check(int(world_map.current_chapter) == 2, "Next Chapter enters World 2")
+	_check(stage_layer != null and stage_layer.get_child_count() == 10, "World 2 has exactly ten stage nodes after rebuild")
+	_check(not world_map.chapter_switch_busy and world_map.next_button.disabled, "World 2 navigation settles with locked future chapters")
+	_check(old_stage_one == null or not is_instance_valid(old_stage_one), "World 1 stage nodes are released before the new page remains active")
+
+	world_map._on_previous_chapter_pressed()
+	world_map._on_previous_chapter_pressed()
+	await _wait_frames(8)
+	_check(int(world_map.current_chapter) == 1, "Rapid Previous Chapter presses settle on one page")
+	world_map._on_next_chapter_pressed()
+	await _wait_frames(8)
+	_check(int(world_map.current_chapter) == 2, "Map can navigate forward again after a rebuild")
+	world_map.queue_free()
+	viewport.queue_free()
+	await _wait_frames(2)
+
+	# Repeat the exact flow at an endless chapter boundary.
+	GameManager.player_state = SaveManager.create_new_save()
+	GameManager.player_state["highest_completed_stage"] = 20
+	GameManager.player_state["unlocked_stage"] = 21
+	GameManager.player_state["current_stage"] = 21
+	GameManager.map_focus_stage = 20
+	var endless_viewport: SubViewport = SubViewport.new()
+	endless_viewport.name = "EndlessChapterNavigationViewport"
+	endless_viewport.size = Vector2i(1080, 1920)
+	get_tree().root.add_child(endless_viewport)
+	var endless_map: Control = load("res://scenes/map/world_map.tscn").instantiate() as Control
+	endless_viewport.add_child(endless_map)
+	await _wait_frames(8)
+	_check(int(endless_map.current_chapter) == 2 and not endless_map.next_button.disabled, "Completed World 2 enables Next Chapter")
+	endless_map._on_next_chapter_pressed()
+	await _wait_frames(8)
+	var endless_stage_layer: Control = endless_map.get_node_or_null("WorldMapScroll/MapContent/StageNodeLayer") as Control
+	_check(int(endless_map.current_chapter) == 3, "Next Chapter enters World 3")
+	_check(endless_stage_layer != null and endless_stage_layer.get_child_count() == 10, "World 3 has exactly ten generated stage nodes")
+	_check(not endless_map.chapter_switch_busy, "Generated chapter navigation finishes unlocked")
+	endless_map.queue_free()
+	endless_viewport.queue_free()
+	await _wait_frames(2)
 
 func _test_boss_map_focus() -> void:
 	GameManager.player_state = SaveManager.create_new_save()
