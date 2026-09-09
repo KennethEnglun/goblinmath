@@ -4,6 +4,8 @@ extends Control
 const MAP_SIZE: Vector2 = Vector2(1080, 4608)
 const SEGMENT_HEIGHT: float = 1536.0
 const MAP_DRAG_THRESHOLD: float = 12.0
+const MAP_SCROLL_TOP_GUTTER: float = 28.0
+const MAP_SCROLL_EDGE_PADDING: float = 96.0
 const STAGE_NODE_SCRIPT = preload("res://scripts/map/stage_node.gd")
 const START_EFFECTS_PATH: String = "res://assets/ui/start/start_effects_v2.png"
 
@@ -135,12 +137,15 @@ func _build_screen() -> void:
 	scroll_container = ScrollContainer.new()
 	scroll_container.name = "WorldMapScroll"
 	scroll_container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	scroll_container.offset_top = map_top_margin + 200.0
+	# Leave a visual buffer below the fixed header so the first visible stage
+	# node cannot be clipped by the header when the map centers the current one.
+	scroll_container.offset_top = map_top_margin + 200.0 + MAP_SCROLL_TOP_GUTTER
 	scroll_container.offset_bottom = -(map_bottom_margin + 288.0)
 	scroll_container.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll_container.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	scroll_container.follow_focus = true
 	scroll_container.scroll_deadzone = 18
+	UITheme.apply_scrollbar_skin(scroll_container, Color("#d98d9d"))
 	add_child(scroll_container)
 
 	map_content = Control.new()
@@ -499,6 +504,13 @@ func _build_fixed_hud() -> void:
 
 func _refresh_progress() -> void:
 	if stats_label != null:
+		var currency_digits: int = maxi(str(GameManager.get_gems()).length(), str(GameManager.get_coins()).length())
+		var stats_font_size: int = 25
+		if currency_digits >= 11:
+			stats_font_size = 18
+		elif currency_digits >= 9:
+			stats_font_size = 21
+		stats_label.add_theme_font_size_override("font_size", stats_font_size)
 		var completed_count: int = 0
 		var chapter_stars: int = 0
 		for stage: Dictionary in world_stages:
@@ -506,7 +518,7 @@ func _refresh_progress() -> void:
 			if GameManager.is_stage_completed(stage_id):
 				completed_count += 1
 				chapter_stars += GameManager.get_stage_stars(stage_id)
-		stats_label.text = "LV.%d   HP %d   ATK %d   DEF %d   💎 %d   金幣 %d   進度 %d/%d   ★ %d" % [GameManager.get_level(), GameManager.get_max_hp(), GameManager.get_attack(), GameManager.get_defense(), GameManager.get_gems(), GameManager.get_coins(), completed_count, world_stages.size(), chapter_stars]
+		stats_label.text = "LV.%d   HP %d   ATK %d   DEF %d   GEMS %d   金幣 %d   進度 %d/%d   星星 %d" % [GameManager.get_level(), GameManager.get_max_hp(), GameManager.get_attack(), GameManager.get_defense(), GameManager.get_gems(), GameManager.get_coins(), completed_count, world_stages.size(), chapter_stars]
 	if chapter_label != null:
 		chapter_label.text = "第%d章" % current_chapter
 	if world_name_label != null:
@@ -575,7 +587,12 @@ func _scroll_to_current_stage(build_id: int) -> void:
 		return
 	var target: float = _stage_position(current_stage).y - (scroll_container.size.y * 0.5)
 	var max_scroll: float = maxf(0.0, MAP_SIZE.y - scroll_container.size.y)
-	scroll_container.scroll_vertical = int(clampf(target, 0.0, max_scroll))
+	# When the current stage is at the bottom of the long map, do not pin the
+	# scroll position to max_scroll: that would push the previous node directly
+	# against the fixed header and make it look clipped. The padding is only
+	# used as an upper clamp, so middle and top-stage focus remain unchanged.
+	var padded_max_scroll: float = maxf(0.0, max_scroll - MAP_SCROLL_EDGE_PADDING)
+	scroll_container.scroll_vertical = int(clampf(target, 0.0, padded_max_scroll))
 	_update_zone_label(float(scroll_container.scroll_vertical) + scroll_container.size.y * 0.5)
 
 func _on_scroll_value_changed(value: float) -> void:

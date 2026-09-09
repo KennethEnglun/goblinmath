@@ -129,11 +129,54 @@ func _test_world_map(unlocked_stage: int) -> void:
 		var home: Control = hud.find_child("HomeButton", true, false) as Control
 		var character: Control = hud.find_child("CharacterButton", true, false) as Control
 		_check(header != null and bottom_hud != null and not header.get_global_rect().intersects(bottom_hud.get_global_rect()), "Fixed header and bottom controls do not overlap")
+		_check(header != null and world_map.scroll_container.offset_top >= header.offset_bottom + 40.0, "Map viewport keeps a safe gutter below the fixed header")
+		var current_stage_node: Control = hud.find_child("StageNode1", true, false) as Control
+		_check(current_stage_node == null or bottom_hud == null or not current_stage_node.get_global_rect().intersects(bottom_hud.get_global_rect()), "Current map stage stays above fixed bottom controls")
 		_check(_uses_chiron_font(map_title), "World map dynamic title uses the bundled rounded CJK font")
 		_check(world_name != null and str(world_name.text).contains("花漾原野"), "Map HUD displays the World 1 name")
 		_check(map_title != null and world_name != null and not map_title.get_global_rect().intersects(world_name.get_global_rect()), "Map title and world name keep a readable vertical gap (%s / %s)" % [map_title.get_global_rect(), world_name.get_global_rect()])
 		_check(world_name != null and world_map.stats_label != null and not world_name.get_global_rect().intersects(world_map.stats_label.get_global_rect()), "World name and progress stats do not overlap")
+		_check(world_map.scroll_container.get_v_scroll_bar().get_theme_stylebox("grabber") is StyleBoxFlat, "World map scrollbar uses the shared pastel skin")
 		_check(home != null and character != null, "Map exposes home and character/equipment navigation")
+		if unlocked_stage == 1:
+			var home_button: Button = home as Button
+			var character_button: Button = character as Button
+			var gacha_button: Button = hud.find_child("GachaButton", true, false) as Button
+			_check(home_button != null and character_button != null and gacha_button != null, "Map bottom navigation exposes all three button targets")
+			_check(home_button != null and home_button.pressed.is_connected(Callable(world_map, "_on_home_pressed")), "Map HOME action is wired to the main menu")
+			_check(character_button != null and character_button.pressed.is_connected(Callable(world_map, "_on_character_pressed")), "Map CHARACTER action is wired to the character page")
+			_check(gacha_button != null and gacha_button.pressed.is_connected(Callable(world_map, "_on_gacha_pressed")), "Map GACHA action is wired to the gacha page")
+			if home_button != null and character_button != null and gacha_button != null:
+				var nav_gui_events: Array[String] = []
+				var home_gui_callback: Callable = func(_event: InputEvent) -> void: nav_gui_events.append("home")
+				var character_gui_callback: Callable = func(_event: InputEvent) -> void: nav_gui_events.append("character")
+				var gacha_gui_callback: Callable = func(_event: InputEvent) -> void: nav_gui_events.append("gacha")
+				var home_action_callback: Callable = Callable(world_map, "_on_home_pressed")
+				var character_action_callback: Callable = Callable(world_map, "_on_character_pressed")
+				var gacha_action_callback: Callable = Callable(world_map, "_on_gacha_pressed")
+				# Keep this as an input-delivery check: the real actions change scenes,
+				# which would otherwise release the test runner during the tap sequence.
+				if home_button.pressed.is_connected(home_action_callback):
+					home_button.pressed.disconnect(home_action_callback)
+				if character_button.pressed.is_connected(character_action_callback):
+					character_button.pressed.disconnect(character_action_callback)
+				if gacha_button.pressed.is_connected(gacha_action_callback):
+					gacha_button.pressed.disconnect(gacha_action_callback)
+				home_button.gui_input.connect(home_gui_callback)
+				character_button.gui_input.connect(character_gui_callback)
+				gacha_button.gui_input.connect(gacha_gui_callback)
+				await _push_pointer_tap(viewport, home_button.get_global_rect().get_center())
+				await _push_pointer_tap(viewport, character_button.get_global_rect().get_center())
+				await _push_pointer_tap(viewport, gacha_button.get_global_rect().get_center())
+				_check(nav_gui_events.has("home"), "A real pointer tap reaches the map HOME target")
+				_check(nav_gui_events.has("character"), "A real pointer tap reaches the map CHARACTER target")
+				_check(nav_gui_events.has("gacha"), "A real pointer tap reaches the map GACHA target")
+				home_button.gui_input.disconnect(home_gui_callback)
+				character_button.gui_input.disconnect(character_gui_callback)
+				gacha_button.gui_input.disconnect(gacha_gui_callback)
+				home_button.pressed.connect(home_action_callback)
+				character_button.pressed.connect(character_action_callback)
+				gacha_button.pressed.connect(gacha_action_callback)
 		for button: Button in hud.find_children("*", "Button", true, false):
 			_check(button.custom_minimum_size.x >= 96.0 or button.size.x >= 96.0, "Map controls keep a horizontal touch target")
 			_check(button.custom_minimum_size.y >= 96.0 or button.size.y >= 96.0, "Map controls keep a vertical touch target")
@@ -302,13 +345,23 @@ func _test_character_screen() -> void:
 		viewport.add_child(character)
 		await _wait_frames(5)
 		_check(character.find_child("BackToMapButton", true, false) != null, "Character screen can return to the map at %s" % viewport_size)
+		var character_back_button: Button = character.find_child("BackToMapButton", true, false) as Button
 		var merge_entry_button: Button = character.find_child("MergeButton", true, false) as Button
 		var gacha_entry_button: Button = character.find_child("GachaButton", true, false) as Button
 		var character_coin_badge: Control = character.find_child("CoinBadge", true, false) as Control
+		_check(character_back_button != null and character_back_button.pressed.is_connected(Callable(character, "_on_back_pressed")), "Character BACK action is wired to map navigation")
 		_check(merge_entry_button != null and merge_entry_button.pressed.is_connected(Callable(character, "_on_merge_pressed")), "Character screen exposes a wired MERGE shortcut")
 		_check(gacha_entry_button != null and character_coin_badge != null and merge_entry_button != null and not gacha_entry_button.get_global_rect().intersects(merge_entry_button.get_global_rect()) and not merge_entry_button.get_global_rect().intersects(character_coin_badge.get_global_rect()), "Character header shortcuts and currency badge do not overlap")
 		for layer_name: String in ["CharacterBackgroundLayer", "CharacterAmbientLayer", "CharacterGoblinLayer", "CharacterPanelLayer", "CharacterEquipmentLayer", "CharacterHudLayer", "CharacterTabLayer", "CharacterActionLayer", "CharacterToastLayer", "CharacterSelectorLayer"]:
 			_check(character.find_child(layer_name, true, false) != null, "Character screen exposes independent %s" % layer_name)
+		var character_toast_panel: Panel = character.find_child("CharacterToastPanel", true, false) as Panel
+		var character_message_label: Label = character.find_child("CharacterMessageLabel", true, false) as Label
+		_check(character_toast_panel != null and character_message_label != null and character_toast_panel.size.y >= 96.0, "Character feedback uses a bounded high-contrast toast panel")
+		if character_toast_panel != null and character_message_label != null:
+			character._refresh_all("CONFIRM SELL\n再次按確認出售才會賣出。")
+			_check(character_toast_panel.visible and character_toast_panel.get_global_rect().encloses(character_message_label.get_global_rect()), "Character feedback text stays inside its toast artwork")
+			_check(character_toast_panel.position.y + character_toast_panel.size.y <= 1920.0 - character.character_bottom_offset + 0.01, "Character feedback stays above the safe bottom margin")
+			character._refresh_all()
 		_check(character.find_child("CharacterBackgroundFallback", true, false) != null or character.character_background_layer.texture != null, "Character screen keeps a background fallback when art is unavailable")
 		_check(character.character_ambient_layer.texture != null, "Character screen reuses the shared ambient effect layer")
 		if merge_entry_button != null:
@@ -344,6 +397,7 @@ func _test_character_screen() -> void:
 		var character_font: Font = character.level_label.get_theme_font("font")
 		_check(character_font != null and character_font.resource_path.contains("ChironGoRoundTC"), "Character dynamic labels use the bundled rounded CJK font")
 		_check(character.profile_scroll.visible and not character.equipment_scroll.visible and not character.bag_scroll.visible, "PROFILE is the only visible tab at startup")
+		_check(character.profile_scroll.get_v_scroll_bar().get_theme_stylebox("grabber") is StyleBoxFlat, "Character content scrollbar uses the shared pastel skin")
 		var choose_character_button: Button = character.find_child("OpenCharacterSelectorButton", true, false) as Button
 		_check(choose_character_button != null and choose_character_button.custom_minimum_size.y >= 96.0, "PROFILE exposes a touch-safe character selector entry")
 		var starter_art: TextureRect = character.find_child("EquipmentArtSprite", true, false) as TextureRect
@@ -377,6 +431,14 @@ func _test_character_screen() -> void:
 		character.set_active_tab("equipment")
 		_check(not character.profile_scroll.visible and character.equipment_scroll.visible and not character.bag_scroll.visible, "EQUIPMENT tab switches independently")
 		_check(character.equipment_row.get_child_count() == 3, "EQUIPMENT renders weapon, head, and body slots")
+		var open_bag_button: Button = character.find_child("OpenBagButton", true, false) as Button
+		_check(open_bag_button != null and open_bag_button.get_theme_stylebox("normal") is StyleBoxTexture, "EQUIPMENT open-bag action uses the authored button skin")
+		if viewport_size == Vector2i(1080, 1920) and open_bag_button != null:
+			await _wait_frames(2)
+			open_bag_button = character.find_child("OpenBagButton", true, false) as Button
+			await _push_pointer_tap(viewport, open_bag_button.get_global_rect().get_center())
+			_check(character.active_tab == "bag", "A real tap opens BAG from the EQUIPMENT action")
+			character.set_active_tab("equipment")
 		var equipment_bonus_value: Label = character.find_child("EquipmentBonusValueLabel", true, false) as Label
 		_check(equipment_bonus_value != null and str(equipment_bonus_value.text).contains("ATK +3"), "EQUIPMENT shows the live aggregate bonus values")
 		_check(tab_bar != null and not tab_bar.get_global_rect().intersects(character.equipment_portrait.get_global_rect()), "EQUIPMENT tab bar stays clear of the goblin portrait")
@@ -388,6 +450,23 @@ func _test_character_screen() -> void:
 		_check(not character.character_goblin_layer.visible, "BAG hides the large character showcase")
 		var inventory_list: VBoxContainer = character.find_child("InventoryList", true, false) as VBoxContainer
 		_check(inventory_list != null and inventory_list.get_child_count() >= 1, "Character screen renders the starter inventory")
+		if viewport_size == Vector2i(1080, 1920):
+			var state_before_empty_bag: Dictionary = GameManager.player_state.duplicate(true)
+			GameManager.player_state["inventory"] = []
+			GameManager.player_state["equipped"] = {"weapon": "", "head": "", "body": ""}
+			character._refresh_all()
+			character.set_active_tab("bag")
+			var empty_inventory_state: Control = character.find_child("EmptyInventoryState", true, false) as Control
+			_check(empty_inventory_state != null and empty_inventory_state.custom_minimum_size.y >= 252.0, "Empty BAG exposes a readable bounded empty-state panel")
+			GameManager.player_state = state_before_empty_bag
+			character._refresh_all()
+			var state_before_long_currency: Dictionary = GameManager.player_state.duplicate(true)
+			GameManager.player_state["gems"] = 987654321
+			GameManager.player_state["coins"] = 1234567890
+			character._refresh_all()
+			_check(character.coin_label.get_theme_font_size("font_size") <= 18, "Character currency badge scales long values to stay within its artwork")
+			GameManager.player_state = state_before_long_currency
+			character._refresh_all()
 		if viewport_size == Vector2i(1080, 1920) and inventory_list != null and inventory_list.get_child_count() >= 1:
 			var bag_header: Control = character.find_child("BagHeader", true, false) as Control
 			var capacity_panel: Control = character.find_child("BagCapacityPanel", true, false) as Control
@@ -435,6 +514,9 @@ func _test_character_screen() -> void:
 				_check(character.active_tab == "bag", "A real tap opens the BAG tab")
 				await _push_pointer_tap(viewport, profile_tab_button.get_global_rect().get_center())
 				_check(character.active_tab == "profile", "A real tap returns to the PROFILE tab")
+			var wide_profile_action: Button = character.find_child("OpenCharacterSelectorButton", true, false) as Button
+			_check(wide_profile_action != null and wide_profile_action.get_theme_stylebox("normal") is StyleBoxTexture, "Wide character actions use the authored button skin")
+			_check(profile_tab_button != null and profile_tab_button.get_theme_stylebox("normal") is StyleBoxTexture, "Character tabs use the authored button skin")
 			var attack_before: int = GameManager.get_base_attack()
 			var stat_button: Button = character.find_child("StatButton_attack", true, false) as Button
 			_check(stat_button != null, "Attack stat button exposes a stable interactive target")
@@ -578,7 +660,8 @@ func _test_battle_pause() -> void:
 	var battle: Control = await _spawn_battle()
 	var hp_before: int = int(battle.player_hp)
 	_check(battle.battle_pause_button != null and battle.battle_pause_button.size.x >= 96.0 and battle.battle_pause_button.size.y >= 96.0, "Battle pause control keeps a touch-safe target")
-	battle._on_pause_pressed()
+	if battle.battle_pause_button != null:
+		await _push_pointer_tap(get_viewport(), battle.battle_pause_button.get_global_rect().get_center())
 	_check(bool(battle.battle_paused), "Battle pause state turns on from the visible pause button")
 	_check(battle.enemy_attack_timer != null and battle.enemy_attack_timer.is_stopped(), "Pausing a battle stops the enemy attack clock")
 	_check(battle.find_child("BattlePauseLayer", true, false) != null, "Pausing a battle exposes an independent pause overlay")
@@ -589,7 +672,10 @@ func _test_battle_pause() -> void:
 	_check(all_keys_disabled, "Pausing a battle disables every answer key")
 	await get_tree().create_timer(0.25).timeout
 	_check(int(battle.player_hp) == hp_before, "A paused battle cannot deal an automatic attack")
-	battle._on_resume_pressed()
+	var resume_button: Button = battle.find_child("ResumeBattleButton", true, false) as Button
+	_check(resume_button != null and resume_button.pressed.is_connected(Callable(battle, "_on_resume_pressed")), "Pause overlay exposes a wired RESUME action")
+	if resume_button != null:
+		await _push_pointer_tap(get_viewport(), resume_button.get_global_rect().get_center())
 	_check(not bool(battle.battle_paused), "Resume returns the battle to the active state")
 	_check(battle.enemy_attack_timer != null and not battle.enemy_attack_timer.is_stopped(), "Resuming a battle restarts the enemy attack clock")
 	_check(not battle.battle_pause_button.disabled, "Pause button becomes available after resume")
@@ -694,13 +780,29 @@ func _test_gacha_screen() -> void:
 		_check(_uses_chiron_font(gacha_title_primary), "Gacha dynamic title uses the bundled rounded font")
 		for layer_name: String in ["GachaBackgroundLayer", "GachaAmbientLayer", "GachaSummonLayer", "GachaPanelLayer", "GachaResultLayer", "GachaMergeLayer", "GachaAutoMergeLayer", "GachaHudLayer", "GachaActionLayer", "GachaToastLayer"]:
 			_check(gacha.find_child(layer_name, true, false) != null, "Gacha screen exposes independent %s" % layer_name)
+		var gacha_toast: Panel = gacha.find_child("GachaToast", true, false) as Panel
+		var gacha_toast_label: Label = gacha.find_child("GachaToastLabel", true, false) as Label
+		_check(gacha_toast != null and gacha_toast_label != null and gacha_toast.size.y >= 112.0, "Gacha feedback uses a bounded high-contrast toast panel")
+		if gacha_toast != null and gacha_toast_label != null:
+			gacha._show_toast("MERGE SUCCESS\n合成完成，退還強化金幣。")
+			_check(gacha_toast.visible and gacha_toast.get_global_rect().encloses(gacha_toast_label.get_global_rect()), "Gacha feedback text stays inside its toast artwork")
+			_check(gacha_toast.position.y + gacha_toast.size.y <= 1920.0 - gacha.bottom_offset + 0.01, "Gacha feedback stays above the safe bottom margin")
+			gacha_toast.visible = false
 		_check(gacha.find_child("AutoMergeButton", true, false) != null and gacha.find_child("CancelAutoMergeButton", true, false) != null and gacha.find_child("ConfirmAutoMergeButton", true, false) != null, "Gacha exposes automatic merge and preview actions")
 		_check(gacha.find_child("BackToMapButton", true, false) != null, "Gacha screen can return to the map")
 		_check(gacha.find_child("GachaBackgroundFallback", true, false) != null or gacha.find_child("GachaBackground", true, false) != null, "Gacha keeps a background fallback")
+		_check(gacha.merge_scroll.get_v_scroll_bar().get_theme_stylebox("grabber") is StyleBoxFlat, "Gacha content scrollbar uses the shared pastel skin")
 		var watch_ad_button: Button = gacha.find_child("WatchAdButton", true, false) as Button
 		_check(watch_ad_button != null and watch_ad_button.disabled, "Watch Ad stays unavailable off native AdMob runtime")
 		_check(watch_ad_button != null and watch_ad_button.pressed.is_connected(Callable(gacha, "_on_watch_ad_pressed")), "Watch Ad is wired to the rewarded-ad request path")
 		_check(gacha.find_child("DiamondIcon", true, false) != null and gacha.find_child("AdLockBadge", true, false) != null, "Gacha HUD and locked ad action use independent icon layers")
+		var back_to_map_button: Button = gacha.find_child("BackToMapButton", true, false) as Button
+		_check(back_to_map_button != null and back_to_map_button.custom_minimum_size.y >= 128.0, "Gacha MAP button keeps the enlarged logo height")
+		var single_action_button: Button = gacha.find_child("SinglePullButton", true, false) as Button
+		var ten_action_button: Button = gacha.find_child("TenPullButton", true, false) as Button
+		_check(single_action_button != null and ten_action_button != null and watch_ad_button != null and single_action_button.custom_minimum_size.y >= 144.0 and ten_action_button.custom_minimum_size.y >= 144.0 and watch_ad_button.custom_minimum_size.y >= 144.0, "Gacha summon buttons keep the enlarged logo height")
+		var ad_lock_badge: TextureRect = gacha.find_child("AdLockBadge", true, false) as TextureRect
+		_check(ad_lock_badge != null and watch_ad_button != null and is_equal_approx(ad_lock_badge.position.y + ad_lock_badge.size.y * 0.5, watch_ad_button.custom_minimum_size.y * 0.5), "Watch Ad lock badge stays vertically centered")
 		var rewarded_ad_service: Node = get_node_or_null("/root/RewardedAdService") as Node
 		if not OS.has_feature("ios") and rewarded_ad_service != null:
 			var gems_before_ad_hook: int = GameManager.get_gems()
@@ -738,6 +840,17 @@ func _test_gacha_screen() -> void:
 			if close_result_button != null and not close_result_button.disabled:
 				await _push_pointer_tap(viewport, close_result_button.get_global_rect().get_center())
 			_check(not gacha.gacha_result_layer.visible, "A real tap closes the gacha result overlay")
+			var scroll_results: Array = []
+			for result_index: int in range(10):
+				scroll_results.append(EquipmentSystem.create_instance("twig_club", "scroll_result_%d" % result_index, 1, 1))
+			gacha._show_results({"items": scroll_results})
+			await _wait_frames(3)
+			var result_scroll: ScrollContainer = gacha.find_child("ResultScroll", true, false) as ScrollContainer
+			await _push_screen_drag(viewport, result_scroll.get_global_rect().get_center(), result_scroll.get_global_rect().get_center() - Vector2(0, 200))
+			_check(result_scroll.scroll_vertical > 0, "Touch dragging ten-pull results reveals later rewards")
+			_check(gacha.merge_scroll.scroll_vertical == 0, "Dragging modal results does not scroll the hidden merge list")
+			await _push_pointer_tap(viewport, close_result_button.get_global_rect().get_center())
+			_check(not gacha.gacha_result_layer.visible, "Results close remains tappable after a touch drag")
 			var merge_inventory: Array = GameManager.get_inventory()
 			merge_inventory.append(EquipmentSystem.create_instance("leaf_cap", "ui_merge_1", 1, 1))
 			merge_inventory.append(EquipmentSystem.create_instance("leaf_cap", "ui_merge_2", 2, 1, EquipmentSystem.upgrade_coins_spent_for_level(2, "common")))
@@ -826,14 +939,21 @@ func _test_real_battle_loop() -> void:
 	_check(battle != null and battle.name == "Battle", "Battle scene instantiates from the project scene")
 	if battle == null:
 		return
+	var feedback_panel: Panel = battle.find_child("BattleFeedbackPanel", true, false) as Panel
+	var enemy_attack_panel: Panel = battle.find_child("EnemyAttackStatusPanel", true, false) as Panel
+	_check(feedback_panel != null and feedback_panel.custom_minimum_size.y >= 72.0 and battle.feedback_label != null, "Battle feedback reserves a bounded readable status area")
+	_check(enemy_attack_panel != null and enemy_attack_panel.custom_minimum_size.y >= 46.0 and battle.enemy_attack_label != null, "Enemy countdown uses a bounded contrast panel")
 	_check(str(battle.current_question.get("question_text", "")) == "5 + 3", "Stage 1 keeps the scripted 5 + 3 opening")
-	_check(str(battle.hearts_label.text).contains("♥♥♥"), "Battle HUD shows three full hearts at full starter HP")
+	_check(str(battle.hearts_label.text) == "HP 30 / 30" and battle.heart_icons.size() == 3 and battle.heart_icons_container.size.x > 0.0, "Battle HUD shows numeric HP with three visible heart icons")
+	_check(battle.keypad_buttons.size() == 12 and battle.keypad_buttons[0].get_theme_stylebox("normal") is StyleBoxTexture, "Battle keypad uses the authored button skin")
 	battle._on_digit_pressed("1")
 	battle._on_submit_pressed()
-	await get_tree().create_timer(0.7).timeout
+	await get_tree().create_timer(0.12).timeout
+	_check(feedback_panel != null and feedback_panel.get_global_rect().size.y >= 72.0 and str(battle.feedback_label.text).contains("TRY AGAIN"), "Wrong-answer feedback remains readable inside its status panel")
+	await get_tree().create_timer(0.58).timeout
 	_check(int(battle.player_hp) == GameManager.get_max_hp() - 10, "Wrong answer applies monster damage to player HP")
 	_check(int(battle.combo) == 0, "Wrong answer resets combo")
-	_check(str(battle.hearts_label.text).contains("♥♥♡"), "Battle HUD shows a visibly missing heart after damage")
+	_check(str(battle.hearts_label.text) == "HP 20 / 30" and battle.heart_icons[2].modulate.a < 1.0, "Battle HUD dims the lost heart after damage")
 
 	battle.queue_free()
 	await _wait_frames(1)
@@ -883,9 +1003,9 @@ func _test_start_screen(viewport_size: Vector2i, test_button: bool) -> void:
 			_check(not goblin.get_rect().intersects(button.get_rect()), "Goblin and button do not overlap at %s" % viewport_size)
 			_check(button.size.x >= 280.0 and button.size.y >= 100.0, "Start button keeps a large touch target at %s" % viewport_size)
 			if test_button:
-				button.emit_signal("pressed")
+				await _push_pointer_tap(viewport, button.get_global_rect().get_center())
 				await get_tree().create_timer(0.3).timeout
-				_check(menu.world_map_requested, "Start button requests the World Map transition")
+				_check(menu.world_map_requested, "A real pointer tap requests the World Map transition")
 	viewport.queue_free()
 	await _wait_frames(1)
 

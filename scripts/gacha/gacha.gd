@@ -25,8 +25,11 @@ const SHARED_ICON_PATHS: Dictionary = {
 }
 const SLOT_NAMES: Dictionary = {"weapon": "武器", "head": "頭部", "body": "身體"}
 const SCROLL_DRAG_THRESHOLD: float = 12.0
+const MAP_BUTTON_MIN_SIZE: Vector2 = Vector2(202, 128)
+const SUMMON_ACTION_BUTTON_HEIGHT: float = 144.0
 
 var top_offset: float = 0.0
+var bottom_offset: float = 64.0
 var active_mode: String = "summon"
 var return_scene: String = "world_map"
 var selected_merge_uids: Array[String] = []
@@ -72,6 +75,7 @@ var result_list: VBoxContainer
 var result_info_label: Label
 var goblin_sprite: TextureRect
 var scroll_drag_active: bool = false
+var scroll_drag_target: ScrollContainer
 var scroll_dragged: bool = false
 var scroll_drag_pointer_id: int = -1
 var scroll_drag_start_position: Vector2 = Vector2.ZERO
@@ -131,7 +135,9 @@ func _input(event: InputEvent) -> void:
 			_update_scroll_drag(screen_drag.position)
 
 func _build_visual_layers() -> void:
-	top_offset = maxf(0.0, UITheme.safe_area_insets(self).y - 86.0)
+	var safe_insets: Vector4 = UITheme.safe_area_insets(self)
+	top_offset = maxf(0.0, safe_insets.y - 86.0)
+	bottom_offset = UITheme.safe_bottom_margin(self)
 	gacha_background_layer = _make_layer("GachaBackgroundLayer", Control.MOUSE_FILTER_IGNORE)
 	var background: TextureRect = TextureRect.new()
 	background.name = "GachaBackground"
@@ -184,9 +190,9 @@ func _build_hud() -> void:
 	var header: Control = Control.new()
 	header.name = "GachaHeader"
 	header.position = Vector2(60, 86 + top_offset)
-	header.size = Vector2(960, 108)
+	header.size = Vector2(960, 160)
 	gacha_hud_layer.add_child(header)
-	var back_button: Button = _make_button("MAP", "地圖", Color("#d9edf0"), Vector2(202, 100))
+	var back_button: Button = _make_button("MAP", "地圖", Color("#d9edf0"), MAP_BUTTON_MIN_SIZE)
 	back_button.name = "BackToMapButton"
 	back_button.pressed.connect(_on_back_pressed)
 	header.add_child(back_button)
@@ -297,6 +303,7 @@ func _build_main_panels() -> void:
 	merge_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	merge_scroll.follow_focus = true
 	merge_scroll.scroll_deadzone = 18
+	UITheme.apply_scrollbar_skin(merge_scroll, Color("#d98d9d"))
 	merge_stack.add_child(merge_scroll)
 	merge_content = VBoxContainer.new()
 	merge_content.name = "MergeContent"
@@ -311,7 +318,7 @@ func _build_actions() -> void:
 	action_medallion.name = "MergeActionMedallion"
 	action_medallion.position = Vector2(394, -60)
 	action_panel.add_child(action_medallion)
-	var stack: VBoxContainer = _panel_stack(action_panel, 22)
+	var stack: VBoxContainer = _panel_stack(action_panel, 64)
 	summon_action_row = HBoxContainer.new()
 	summon_action_row.name = "SummonActionRow"
 	summon_action_row.add_theme_constant_override("separation", 12)
@@ -320,24 +327,25 @@ func _build_actions() -> void:
 	var single_cost: int = int(gacha_config.get("single_cost", GameBalance.GACHA_SINGLE_COST))
 	var ten_cost: int = int(gacha_config.get("ten_cost", GameBalance.GACHA_TEN_COST))
 	var ad_reward: int = int(gacha_config.get("ad_reward", GameBalance.AD_GEM_REWARD))
-	single_pull_button = _make_button("1 PULL", "%d 鑽石" % single_cost, Color("#ffe19a"), Vector2(0, 112))
+	var summon_button_minimum: Vector2 = Vector2(0, SUMMON_ACTION_BUTTON_HEIGHT)
+	single_pull_button = _make_button("1 PULL", "%d 鑽石" % single_cost, Color("#ffe19a"), summon_button_minimum)
 	single_pull_button.name = "SinglePullButton"
 	single_pull_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	single_pull_button.pressed.connect(_on_single_pull_pressed)
 	summon_action_row.add_child(single_pull_button)
-	ten_pull_button = _make_button("10 PULLS", "%d 鑽石" % ten_cost, Color("#ffb6c6"), Vector2(0, 112))
+	ten_pull_button = _make_button("10 PULLS", "%d 鑽石" % ten_cost, Color("#ffb6c6"), summon_button_minimum)
 	ten_pull_button.name = "TenPullButton"
 	ten_pull_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ten_pull_button.pressed.connect(_on_ten_pull_pressed)
 	summon_action_row.add_child(ten_pull_button)
-	watch_ad_button = _make_button("WATCH AD", "觀看廣告 +%d\n廣告功能尚未開放" % ad_reward, Color("#d8d1d0"), Vector2(0, 112))
+	watch_ad_button = _make_button("WATCH AD", "觀看廣告 +%d\n廣告功能尚未開放" % ad_reward, Color("#d8d1d0"), summon_button_minimum)
 	watch_ad_button.name = "WatchAdButton"
 	watch_ad_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	watch_ad_button.pressed.connect(_on_watch_ad_pressed)
 	watch_ad_button.disabled = not _is_rewarded_ad_available()
 	var ad_lock_badge: TextureRect = _make_sprite(AD_LOCK_BADGE_PATH, Vector2(54, 54))
 	ad_lock_badge.name = "AdLockBadge"
-	ad_lock_badge.position = Vector2(10, 29)
+	ad_lock_badge.position = Vector2(10, (SUMMON_ACTION_BUTTON_HEIGHT - ad_lock_badge.size.y) * 0.5)
 	ad_lock_badge.modulate = Color(1.0, 1.0, 1.0, 0.72)
 	watch_ad_button.add_child(ad_lock_badge)
 	summon_action_row.add_child(watch_ad_button)
@@ -356,9 +364,9 @@ func _build_actions() -> void:
 	auto_merge_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	auto_merge_button.pressed.connect(_on_auto_merge_pressed)
 	merge_action_row.add_child(auto_merge_button)
-	var help: Label = UITheme.make_label("相同模板的三件裝備可以合成下一階，已裝備物品也可作為材料。\n自動合成會先顯示預覽；合成會退還材料曾支付的強化金幣。\n完成 rewarded ad 後可獲得轉蛋鑽石。", 21, UITheme.MUTED_INK)
+	var help: Label = UITheme.make_label("同款裝備三件可合成；強化金幣會退還。\n自動合成可先預覽，已裝備物品也可使用。", 22, UITheme.INK)
 	help.name = "GachaHelpLabel"
-	help.custom_minimum_size = Vector2(0, 90)
+	help.custom_minimum_size = Vector2(0, 64)
 	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	stack.add_child(help)
 
@@ -375,7 +383,7 @@ func _build_result_layer() -> void:
 	var result_panel: Panel = _make_panel("ResultPanel", Color("#fff8ed"), Color("#e5b95e"), Vector2(70, 300 + top_offset), Vector2(940, 1300), RESULT_CARD_PATH, SHARED_PANEL_SKIN_PATH)
 	result_panel.z_index = 1
 	gacha_result_layer.add_child(result_panel)
-	var stack: VBoxContainer = _panel_stack(result_panel, 22)
+	var stack: VBoxContainer = _panel_stack(result_panel, 128)
 	stack.add_child(UITheme.make_dual_label("SUMMON RESULT", "轉蛋結果", 38, 22, UITheme.INK))
 	result_info_label = UITheme.make_label("", 22, UITheme.MUTED_INK)
 	result_info_label.name = "GachaResultInfoLabel"
@@ -383,12 +391,14 @@ func _build_result_layer() -> void:
 	stack.add_child(result_info_label)
 	var result_scroll: ScrollContainer = ScrollContainer.new()
 	result_scroll.name = "ResultScroll"
-	result_scroll.custom_minimum_size = Vector2(0, 880)
+	result_scroll.custom_minimum_size = Vector2(0, 200)
+	result_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	result_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	UITheme.apply_scrollbar_skin(result_scroll, Color("#d9a85c"))
 	stack.add_child(result_scroll)
 	result_list = VBoxContainer.new()
 	result_list.name = "ResultList"
-	result_list.custom_minimum_size = Vector2(850, 0)
+	result_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	result_list.add_theme_constant_override("separation", 10)
 	result_scroll.add_child(result_list)
 	var close_button: Button = _make_button("CLOSE", "關閉結果", Color("#d9edf0"), Vector2(0, 104))
@@ -407,7 +417,7 @@ func _build_auto_merge_preview() -> void:
 	auto_merge_preview_panel = _make_panel("AutoMergePreviewPanel", Color("#fff8ed"), Color("#e5b95e"), Vector2(70, 250 + top_offset), Vector2(940, 1400), RESULT_CARD_PATH, SHARED_PANEL_SKIN_PATH)
 	auto_merge_preview_panel.z_index = 1
 	gacha_auto_merge_layer.add_child(auto_merge_preview_panel)
-	var stack: VBoxContainer = _panel_stack(auto_merge_preview_panel, 24)
+	var stack: VBoxContainer = _panel_stack(auto_merge_preview_panel, 138)
 	stack.add_child(UITheme.make_dual_label("AUTO MERGE PREVIEW", "自動合成預覽", 34, 21, UITheme.INK))
 	auto_merge_preview_summary = UITheme.make_label("", 23, UITheme.MUTED_INK)
 	auto_merge_preview_summary.name = "AutoMergePreviewSummary"
@@ -416,13 +426,15 @@ func _build_auto_merge_preview() -> void:
 	stack.add_child(auto_merge_preview_summary)
 	var preview_scroll: ScrollContainer = ScrollContainer.new()
 	preview_scroll.name = "AutoMergePreviewScroll"
-	preview_scroll.custom_minimum_size = Vector2(0, 860)
+	preview_scroll.custom_minimum_size = Vector2(0, 200)
+	preview_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	preview_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	preview_scroll.follow_focus = true
+	UITheme.apply_scrollbar_skin(preview_scroll, Color("#d9a85c"))
 	stack.add_child(preview_scroll)
 	auto_merge_preview_content = VBoxContainer.new()
 	auto_merge_preview_content.name = "AutoMergePreviewContent"
-	auto_merge_preview_content.custom_minimum_size = Vector2(850, 0)
+	auto_merge_preview_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	auto_merge_preview_content.add_theme_constant_override("separation", 8)
 	preview_scroll.add_child(auto_merge_preview_content)
 	var action_row: HBoxContainer = HBoxContainer.new()
@@ -443,13 +455,18 @@ func _build_auto_merge_preview() -> void:
 func _build_toast_layer() -> void:
 	var toast: Panel = UITheme.make_panel(Color(0.36, 0.18, 0.2, 0.94), Color("#f2b4bb"), 28, 3)
 	toast.name = "GachaToast"
-	toast.position = Vector2(120, 1770 + top_offset)
-	toast.size = Vector2(840, 92)
+	toast.position = Vector2(120, minf(1744.0 + top_offset, 1920.0 - bottom_offset - 112.0))
+	toast.size = Vector2(840, 112)
 	toast.visible = false
 	gacha_toast_layer.add_child(toast)
 	var label: Label = UITheme.make_label("", 22, Color.WHITE)
 	label.name = "GachaToastLabel"
 	label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	label.offset_left = 20.0
+	label.offset_right = -20.0
+	label.offset_top = 12.0
+	label.offset_bottom = -12.0
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	toast.add_child(label)
 
 func _set_mode(mode: String) -> void:
@@ -500,6 +517,10 @@ func _set_page_title(mode: String) -> void:
 		secondary.text = "合成" if mode == "merge" else "轉蛋"
 
 func _get_active_scroll() -> ScrollContainer:
+	if gacha_auto_merge_layer != null and gacha_auto_merge_layer.visible:
+		return gacha_auto_merge_layer.find_child("AutoMergePreviewScroll", true, false) as ScrollContainer
+	if gacha_result_layer != null and gacha_result_layer.visible:
+		return gacha_result_layer.find_child("ResultScroll", true, false) as ScrollContainer
 	if active_mode == "merge" and merge_scroll != null and merge_scroll.visible:
 		return merge_scroll
 	return null
@@ -508,13 +529,14 @@ func _begin_scroll_drag(position: Vector2, pointer_id: int, scroll: ScrollContai
 	if scroll == null or not scroll.visible or not scroll.get_global_rect().has_point(position):
 		return
 	scroll_drag_active = true
+	scroll_drag_target = scroll
 	scroll_dragged = false
 	scroll_drag_pointer_id = pointer_id
 	scroll_drag_start_position = position
 	scroll_drag_last_position = position
 
 func _update_scroll_drag(position: Vector2) -> void:
-	if not scroll_drag_active or merge_scroll == null:
+	if not scroll_drag_active or not is_instance_valid(scroll_drag_target):
 		return
 	if not scroll_dragged and position.distance_to(scroll_drag_start_position) >= SCROLL_DRAG_THRESHOLD:
 		scroll_dragged = true
@@ -522,8 +544,9 @@ func _update_scroll_drag(position: Vector2) -> void:
 		scroll_drag_last_position = position
 		return
 	var delta_y: float = position.y - scroll_drag_last_position.y
-	var max_scroll: int = maxi(0, int(ceil(merge_scroll.get_v_scroll_bar().max_value)))
-	merge_scroll.scroll_vertical = clampi(int(round(float(merge_scroll.scroll_vertical) - delta_y)), 0, max_scroll)
+	var bar: VScrollBar = scroll_drag_target.get_v_scroll_bar()
+	var max_scroll: int = maxi(0, int(ceil(bar.max_value - bar.page)))
+	scroll_drag_target.scroll_vertical = clampi(int(round(float(scroll_drag_target.scroll_vertical) - delta_y)), 0, max_scroll)
 	scroll_drag_last_position = position
 	get_viewport().set_input_as_handled()
 
@@ -534,6 +557,7 @@ func _end_scroll_drag() -> void:
 
 func _clear_scroll_drag() -> void:
 	scroll_drag_active = false
+	scroll_drag_target = null
 	scroll_dragged = false
 	scroll_drag_pointer_id = -1
 	scroll_drag_start_position = Vector2.ZERO
@@ -542,7 +566,14 @@ func _clear_scroll_drag() -> void:
 func _refresh() -> void:
 	if gem_label == null:
 		return
-	gem_label.text = "%d\n鑽石" % GameManager.get_gems()
+	var gems_text: String = str(GameManager.get_gems())
+	var gem_font_size: int = 25
+	if gems_text.length() >= 11:
+		gem_font_size = 19
+	elif gems_text.length() >= 9:
+		gem_font_size = 21
+	gem_label.add_theme_font_size_override("font_size", gem_font_size)
+	gem_label.text = "%s\n鑽石" % gems_text
 	var available: Array[String] = GachaSystem.get_available_rarities(int(GameManager.player_state.get("highest_completed_stage", 0)))
 	var rarity_text: Array[String] = []
 	for rarity: String in available:
@@ -611,7 +642,8 @@ func _make_merge_group(template: Dictionary, items: Array) -> Panel:
 	var rarity: String = str(template.get("rarity", "common"))
 	var group: Panel = UITheme.make_panel(Color("#fffaf3"), Color("#dfc28f"), 24, 3)
 	group.name = "MergeGroup_%s" % str(template.get("id", "unknown"))
-	group.custom_minimum_size = Vector2(0, 300)
+	var material_rows: int = ceili(float(items.size()) / 6.0)
+	group.custom_minimum_size = Vector2(0, 166 + material_rows * 184 + maxi(0, material_rows - 1) * 14)
 	var margin: MarginContainer = _panel_margin(group, 18)
 	var stack: VBoxContainer = VBoxContainer.new()
 	stack.add_theme_constant_override("separation", 10)
@@ -632,16 +664,13 @@ func _make_merge_group(template: Dictionary, items: Array) -> Panel:
 	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	header.add_child(title_label)
-	var row: HBoxContainer = HBoxContainer.new()
+	var row: GridContainer = GridContainer.new()
 	row.name = "MergeMaterialRow"
-	row.add_theme_constant_override("separation", 14)
-	row.custom_minimum_size = Vector2(0, 154)
-	row.alignment = BoxContainer.ALIGNMENT_BEGIN
+	row.columns = 6
+	row.add_theme_constant_override("h_separation", 14)
+	row.add_theme_constant_override("v_separation", 14)
+	row.custom_minimum_size = Vector2(0, 184)
 	stack.add_child(row)
-	var leading_space: Control = Control.new()
-	leading_space.custom_minimum_size = Vector2(138, 0)
-	row.add_child(leading_space)
-	var shown: int = 0
 	for raw_item: Variant in items:
 		if not raw_item is Dictionary:
 			continue
@@ -652,9 +681,6 @@ func _make_merge_group(template: Dictionary, items: Array) -> Panel:
 		if is_valid:
 			item_button.pressed.connect(_on_merge_item_pressed.bind(uid, str(template.get("id", ""))))
 		row.add_child(item_button)
-		shown += 1
-		if shown >= 7:
-			break
 	return group
 
 func _make_merge_material_button(item: Dictionary, template: Dictionary, rarity: String, is_valid: bool, is_selected: bool) -> Button:
@@ -663,7 +689,7 @@ func _make_merge_material_button(item: Dictionary, template: Dictionary, rarity:
 	if not is_valid:
 		base_color = Color("#e5ded9")
 	item_button.name = "MergeItem_%s" % str(item.get("uid", ""))
-	item_button.custom_minimum_size = Vector2(120, 154)
+	item_button.custom_minimum_size = Vector2(120, 184)
 	item_button.focus_mode = Control.FOCUS_NONE
 	item_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	item_button.add_theme_stylebox_override("normal", UITheme.rounded_style(base_color, Color("#c99b48"), 18, 3))
@@ -679,7 +705,7 @@ func _make_merge_material_button(item: Dictionary, template: Dictionary, rarity:
 	var level_text: String = "Lv.%d\n已裝備" % int(item.get("level", 1)) if is_equipped else "Lv.%d" % int(item.get("level", 1))
 	var level_label: Label = UITheme.make_label(level_text, 18, UITheme.INK if is_valid else UITheme.MUTED_INK)
 	level_label.position = Vector2(0, 108)
-	level_label.size = Vector2(120, 42)
+	level_label.size = Vector2(120, 64)
 	level_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	item_button.add_child(level_label)
 	if is_valid:
@@ -693,10 +719,10 @@ func _make_selection_badge(is_selected: bool = false) -> Panel:
 	badge.name = "SelectedBadge"
 	badge.size = Vector2(32, 32)
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var badge_color: Color = Color("#72bd7d") if is_selected else Color("#a8d99c")
+	var badge_color: Color = Color("#4f8050") if is_selected else Color("#fffaf3")
 	var badge_border: Color = Color("#4f965f") if is_selected else Color("#78ad6f")
 	badge.add_theme_stylebox_override("panel", UITheme.rounded_style(badge_color, badge_border, 16, 2))
-	var check: Label = UITheme.make_label("✓", 20, Color.WHITE)
+	var check: Label = UITheme.make_label("✓" if is_selected else "", 20, Color.WHITE)
 	check.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	check.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	badge.add_child(check)
@@ -804,6 +830,7 @@ func _show_auto_merge_preview() -> void:
 		var line: String = "第%d組　%s × 3  →  %s%s" % [int(step.get("step_index", 0)), str(source.get("name_zh", source.get("name", source_id))), str(target.get("name_zh", target.get("name", target_id))), equipped_suffix]
 		var step_label: Label = UITheme.make_label(line, 20, UITheme.INK)
 		step_label.custom_minimum_size = Vector2(0, 58)
+		step_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		step_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		step_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		auto_merge_preview_content.add_child(step_label)
@@ -851,6 +878,9 @@ func _show_results(result: Dictionary) -> void:
 	var items: Variant = result.get("items", [])
 	if not items is Array:
 		return
+	var panel: Panel = gacha_result_layer.get_node("ResultPanel") as Panel
+	panel.size.y = 760.0 if items.size() == 1 else 1360.0
+	panel.position.y = (1920.0 - panel.size.y) * 0.5 + top_offset
 	result_info_label.text = "%s\n剩餘鑽石 %d" % ["十連保底已生效" if bool(result.get("guaranteed", false)) else "抽取完成", GameManager.get_gems()]
 	for raw_item: Variant in items:
 		if raw_item is Dictionary:
@@ -891,7 +921,7 @@ func _make_result_card(item: Dictionary) -> Panel:
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_child(info)
-	info.add_child(UITheme.make_label("%s  Lv.1" % str(template.get("name_zh", template.get("name", "裝備"))), 23, EquipmentSystem.rarity_color(rarity)))
+	info.add_child(UITheme.make_label("%s  Lv.1" % str(template.get("name_zh", template.get("name", "裝備"))), 23, UITheme.INK))
 	info.add_child(UITheme.make_label("%s · %s" % [str(SLOT_NAMES.get(slot, "裝備")), _rarity_name(rarity)], 19, UITheme.MUTED_INK))
 	return card
 
@@ -991,6 +1021,12 @@ func _make_panel(panel_name: String, background: Color, border: Color, at: Vecto
 func _make_button(primary: String, secondary: String, color: Color, minimum: Vector2) -> Button:
 	var button: Button = UITheme.make_button(primary, secondary, color, minimum)
 	UITheme.apply_texture_button_skin(button, BUTTON_SKIN_PATH if ResourceLoader.exists(BUTTON_SKIN_PATH) else SHARED_BUTTON_SKIN_PATH, color, 24)
+	var content: VBoxContainer = button.get_child(0) as VBoxContainer
+	content.offset_left = 20
+	content.offset_right = -20
+	content.offset_top = 12
+	content.offset_bottom = -12
+	(content.get_child(0) as Label).add_theme_font_size_override("font_size", 30)
 	return button
 
 func _style_tab_button(button: Button, background: Color) -> void:

@@ -63,6 +63,7 @@ var active_tab: String = TAB_PROFILE
 var pending_sell_uid: String = ""
 var inventory_sort_mode: String = "rarity"
 var character_top_offset: float = 0.0
+var character_bottom_offset: float = 64.0
 var scroll_drag_active: bool = false
 var scroll_dragged: bool = false
 var scroll_drag_pointer_id: int = -1
@@ -77,6 +78,7 @@ var character_panel_layer: Control
 var character_hud_layer: Control
 var character_tab_layer: Control
 var character_toast_layer: Control
+var character_toast_panel: Panel
 var character_action_layer: Control
 var character_equipment_layer: Control
 var character_selector_layer: Control
@@ -164,6 +166,7 @@ func _build_screen() -> void:
 func _build_visual_layers() -> void:
 	var safe_insets: Vector4 = UITheme.safe_area_insets(self)
 	character_top_offset = maxf(0.0, safe_insets.y - 86.0)
+	character_bottom_offset = UITheme.safe_bottom_margin(self)
 	character_background_layer = TextureRect.new()
 	character_background_layer.name = "CharacterBackgroundLayer"
 	character_background_layer.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -270,7 +273,7 @@ func _build_hud() -> void:
 	coin_badge.add_child(diamond_icon)
 	coin_label = UITheme.make_label("", 21, Color("#8b5d2b"), UITheme.FontRole.BOLD)
 	coin_label.position = Vector2(148, 8)
-	coin_label.size = Vector2(170, 88)
+	coin_label.size = Vector2(180, 88)
 	coin_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	coin_label.z_index = 2
 	coin_badge.add_child(coin_label)
@@ -392,11 +395,23 @@ func _build_tab_contents() -> void:
 	inventory_list.add_theme_constant_override("separation", 12)
 	bag_content.add_child(inventory_list)
 
-	message_label = UITheme.make_label("", 22, UITheme.MUTED_INK)
+	character_toast_panel = UITheme.make_panel(Color(0.36, 0.18, 0.20, 0.94), Color("#f2b4bb"), 26, 3)
+	character_toast_panel.name = "CharacterToastPanel"
+	character_toast_panel.position = Vector2(120, minf(1744.0 + character_top_offset, 1920.0 - character_bottom_offset - 112.0))
+	character_toast_panel.size = Vector2(840, 112)
+	character_toast_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	character_toast_panel.visible = false
+	character_toast_layer.add_child(character_toast_panel)
+	message_label = UITheme.make_label("", 22, Color("#fff9ee"), UITheme.FontRole.BOLD)
 	message_label.name = "CharacterMessageLabel"
-	message_label.position = Vector2(46, minf(1800.0 + character_top_offset, 1920.0 - 64.0 - 64.0))
-	message_label.size = Vector2(988, 64)
-	character_toast_layer.add_child(message_label)
+	message_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	message_label.offset_left = 24.0
+	message_label.offset_right = -24.0
+	message_label.offset_top = 12.0
+	message_label.offset_bottom = -12.0
+	message_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	message_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	character_toast_panel.add_child(message_label)
 
 func _build_character_selector() -> void:
 	character_selector_layer = Control.new()
@@ -451,6 +466,7 @@ func _build_character_selector() -> void:
 	card_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	card_scroll.scroll_deadzone = 18
 	card_scroll.follow_focus = true
+	UITheme.apply_scrollbar_skin(card_scroll, Color("#d9a85c"))
 	stack.add_child(card_scroll)
 	character_card_row = HBoxContainer.new()
 	character_card_row.name = "CharacterCardRow"
@@ -622,9 +638,9 @@ func _on_confirm_character_purchase_pressed() -> void:
 func _make_profile_summary() -> Panel:
 	var summary: Panel = UITheme.make_panel(Color(1, 0.97, 0.92, 0.96), Color("#dd9ba7"), 34, 5)
 	summary.name = "ProfileSummaryPanel"
-	summary.custom_minimum_size = Vector2(0, 580)
+	summary.custom_minimum_size = Vector2(0, 620)
 	UITheme.apply_texture_panel_skin(summary, PANEL_SKIN_PATH, 34)
-	var margin: MarginContainer = _panel_margin(summary, 32)
+	var margin: MarginContainer = _panel_margin(summary, 68)
 	margin.add_theme_constant_override("margin_top", 70)
 	var stack: VBoxContainer = VBoxContainer.new()
 	stack.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -669,8 +685,11 @@ func _make_stat_summary_tile(stat: String, chinese: String, english: String) -> 
 	tile.add_child(icon)
 	var value: Label = UITheme.make_label("", 20, UITheme.INK, UITheme.FontRole.BOLD)
 	value.name = "ProfileStatValue_%s" % stat
-	value.position = Vector2(78, 10)
-	value.size = Vector2(350, 106)
+	value.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	value.offset_left = 78
+	value.offset_top = 10
+	value.offset_right = -12
+	value.offset_bottom = -10
 	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	value.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	value.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -755,6 +774,7 @@ func _make_scroll(scroll_name: String, parent: Control) -> ScrollContainer:
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	scroll.follow_focus = true
 	scroll.scroll_deadzone = 18
+	UITheme.apply_scrollbar_skin(scroll, Color("#d98d9d"))
 	parent.add_child(scroll)
 	return scroll
 
@@ -795,7 +815,8 @@ func _update_scroll_drag(position: Vector2) -> void:
 		scroll_drag_last_position = position
 		return
 	var delta_y: float = position.y - scroll_drag_last_position.y
-	var max_scroll: int = maxi(0, int(ceil(scroll_drag_scroll.get_v_scroll_bar().max_value)))
+	var bar: VScrollBar = scroll_drag_scroll.get_v_scroll_bar()
+	var max_scroll: int = maxi(0, int(ceil(bar.max_value - bar.page)))
 	scroll_drag_scroll.scroll_vertical = clampi(int(round(float(scroll_drag_scroll.scroll_vertical) - delta_y)), 0, max_scroll)
 	scroll_drag_last_position = position
 	get_viewport().set_input_as_handled()
@@ -921,11 +942,23 @@ func _refresh_all(message: String = "") -> void:
 	var available_stat_points: int = GameManager.get_stat_points()
 	points_label.text = "可用 %d 點  ·  累計獲得 %d 點" % [available_stat_points, total_stat_points]
 	inventory_count_label.text = "背包 %d / ∞\nBAG CAPACITY" % GameManager.get_inventory().size()
-	coin_label.text = "%d  鑽石\n%d  金幣" % [GameManager.get_gems(), GameManager.get_coins()]
+	var gems_text: String = str(GameManager.get_gems())
+	var coins_text: String = str(GameManager.get_coins())
+	var largest_currency_digits: int = maxi(gems_text.length(), coins_text.length())
+	var currency_font_size: int = 21
+	if largest_currency_digits >= 11:
+		currency_font_size = 16
+	elif largest_currency_digits >= 9:
+		currency_font_size = 18
+	coin_label.add_theme_font_size_override("font_size", currency_font_size)
+	coin_label.text = "%s  鑽石\n%s  金幣" % [gems_text, coins_text]
 	if choose_character_button != null:
 		var selected_character: Dictionary = GameManager.get_selected_character()
 		UITheme.set_dual_button_text(choose_character_button, "選擇主角 · %s" % str(selected_character.get("name_zh", "主角")), "CHOOSE HERO")
-	message_label.text = message
+	if message_label != null:
+		message_label.text = message
+	if character_toast_panel != null:
+		character_toast_panel.visible = not message.is_empty()
 	_refresh_equipment_slots()
 	_refresh_inventory()
 	_refresh_active_tab()
@@ -1014,7 +1047,7 @@ func _make_equipment_slot_card(slot: String) -> Panel:
 	var item: Dictionary = EquipmentSystem.find_item(GameManager.get_inventory(), uid)
 	stack.add_child(_make_item_icon(slot, not item.is_empty(), Vector2(136, 136), item))
 	var item_text: String = EquipmentSystem.describe_item(item) if not item.is_empty() else "未裝備\nEMPTY"
-	var item_label: Label = UITheme.make_label(item_text, 18, EquipmentSystem.rarity_color(str(EquipmentSystem.get_item_template(item).get("rarity", "common"))) if not item.is_empty() else UITheme.MUTED_INK, UITheme.FontRole.BOLD)
+	var item_label: Label = UITheme.make_label(item_text, 18, UITheme.INK if not item.is_empty() else UITheme.MUTED_INK, UITheme.FontRole.BOLD)
 	item_label.custom_minimum_size = Vector2(0, 48)
 	stack.add_child(item_label)
 	if item.is_empty():
@@ -1038,7 +1071,20 @@ func _refresh_inventory() -> void:
 	if inventory_sort_button != null:
 		UITheme.set_dual_button_text(inventory_sort_button, "整理", _inventory_sort_label())
 	if inventory.is_empty():
-		inventory_list.add_child(UITheme.make_label("EMPTY BAG\n尚未取得裝備，通過關卡就有機會掉落。", 24, UITheme.MUTED_INK))
+		var empty_state: Panel = UITheme.make_panel(Color(1.0, 0.98, 0.93, 0.88), Color("#e3bd8c"), 28, 3)
+		empty_state.name = "EmptyInventoryState"
+		empty_state.custom_minimum_size = Vector2(0, 252)
+		var empty_margin: MarginContainer = _panel_margin(empty_state, 28)
+		var empty_stack: VBoxContainer = VBoxContainer.new()
+		empty_stack.alignment = BoxContainer.ALIGNMENT_CENTER
+		empty_stack.add_theme_constant_override("separation", 8)
+		empty_margin.add_child(empty_stack)
+		empty_stack.add_child(UITheme.make_zh_en_label("尚未取得裝備", "EMPTY BAG", 28, 16, UITheme.INK))
+		var empty_hint: Label = UITheme.make_label("通過關卡就有機會掉落裝備。", 21, UITheme.MUTED_INK)
+		empty_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		empty_hint.custom_minimum_size = Vector2(0, 56)
+		empty_stack.add_child(empty_hint)
+		inventory_list.add_child(empty_state)
 		return
 	for raw_item: Variant in _sorted_inventory(inventory):
 		if raw_item is Dictionary:
@@ -1083,7 +1129,7 @@ func _make_item_card(item: Dictionary) -> Panel:
 		status.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		info.add_child(status)
-	var name_label: Label = UITheme.make_label(EquipmentSystem.describe_item(item), 25, EquipmentSystem.rarity_color(rarity), UITheme.FontRole.BOLD)
+	var name_label: Label = UITheme.make_label(EquipmentSystem.describe_item(item), 25, UITheme.INK, UITheme.FontRole.BOLD)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1249,7 +1295,7 @@ func _format_stats(stats: Dictionary) -> String:
 func _rarity_name(rarity: String) -> String:
 	return {"common": "COMMON 普通", "uncommon": "UNCOMMON 精良", "rare": "RARE 稀有", "epic": "EPIC 史詩", "legendary": "LEGENDARY 傳說"}.get(rarity, "COMMON 普通")
 
-func _make_small_button(text_value: String, color: Color, min_size: Vector2, _logo_path: String = ACTION_BUTTON_SKIN_PATH, icon_path: String = "") -> Button:
+func _make_small_button(text_value: String, color: Color, min_size: Vector2, logo_path: String = ACTION_BUTTON_SKIN_PATH, icon_path: String = "") -> Button:
 	var button: Button = Button.new()
 	button.custom_minimum_size = Vector2(maxf(min_size.x, 96.0), maxf(min_size.y, 96.0))
 	button.clip_contents = false
@@ -1297,6 +1343,13 @@ func _make_small_button(text_value: String, color: Color, min_size: Vector2, _lo
 	button.add_child(content)
 	button.button_down.connect(_animate_button_down.bind(button))
 	button.button_up.connect(_animate_button_up.bind(button))
+	# The authored action art is a wide landscape skin. Full-width controls have
+	# a zero width in their minimum-size spec and may be hidden until their tab
+	# opens, so decide from the authored minimum size instead of waiting for a
+	# late layout callback. Compact square shortcuts keep the clean treatment.
+	var is_wide_button: bool = min_size.x <= 0.0 or min_size.x / maxf(min_size.y, 1.0) >= 1.6
+	if is_wide_button and not logo_path.is_empty() and ResourceLoader.exists(logo_path):
+		UITheme.apply_texture_button_skin(button, logo_path, color, 20)
 	return button
 
 func _animate_button_down(button: Button) -> void:

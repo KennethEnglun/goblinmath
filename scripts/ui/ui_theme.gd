@@ -10,7 +10,7 @@ const INK: Color = Color("#5c2d2d")
 const MUTED_INK: Color = Color("#8c5f58")
 const CREAM: Color = Color("#fff9ec")
 const MINT: Color = Color("#a9e4cf")
-const MINT_DARK: Color = Color("#69bda4")
+const MINT_DARK: Color = Color("#28654f")
 const SKY: Color = Color("#bfeaf5")
 const PINK: Color = Color("#ffb9c6")
 const YELLOW: Color = Color("#ffe28a")
@@ -24,6 +24,25 @@ enum FontRole {
 
 static var _shared_fonts: Dictionary = {}
 static var _font_checked: Dictionary = {}
+static var _skin_textures: Dictionary = {}
+
+static func skin_texture(path: String) -> Texture2D:
+	# Layout measures the painted surface, never the PNG's transparent canvas.
+	if _skin_textures.has(path):
+		return _skin_textures[path] as Texture2D
+	var source: Texture2D = load(path) as Texture2D
+	if source == null:
+		return null
+	var pixels: Image = source.get_image()
+	if pixels == null or pixels.is_empty():
+		return source
+	var bounds: Rect2i = pixels.get_used_rect()
+	if bounds.size == Vector2i.ZERO:
+		return source
+	# A standalone texture avoids AtlasTexture UV bleed in nine-patch rendering.
+	var cropped: ImageTexture = ImageTexture.create_from_image(pixels.get_region(bounds))
+	_skin_textures[path] = cropped
+	return cropped
 
 static func shared_font(role: int = FontRole.BODY) -> Font:
 	var normalized_role: int = FontRole.BOLD if role == FontRole.BOLD else FontRole.BODY
@@ -83,7 +102,7 @@ static func make_label(text_value: String, font_size: int, color: Color = INK, f
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_font_size_override("font_size", font_size)
 	label.add_theme_color_override("font_color", color)
-	label.add_theme_color_override("font_shadow_color", Color(0.25, 0.12, 0.12, 0.16))
+	label.add_theme_color_override("font_shadow_color", Color.TRANSPARENT)
 	label.add_theme_constant_override("shadow_offset_x", 0)
 	label.add_theme_constant_override("shadow_offset_y", 4)
 	apply_font(label, font_role)
@@ -128,10 +147,12 @@ static func make_texture_style(texture: Texture2D, tint: Color = Color.WHITE, te
 	var style: StyleBoxTexture = StyleBoxTexture.new()
 	style.texture = texture
 	style.modulate_color = tint
-	style.texture_margin_left = texture_margin
-	style.texture_margin_top = texture_margin
-	style.texture_margin_right = texture_margin
-	style.texture_margin_bottom = texture_margin
+	# These painted illustrations are not authored as nine-slice assets.
+	# Scale the full cropped artwork; slicing its outline makes thick crossbars.
+	style.texture_margin_left = 0
+	style.texture_margin_top = 0
+	style.texture_margin_right = 0
+	style.texture_margin_bottom = 0
 	style.content_margin_left = texture_margin
 	style.content_margin_top = texture_margin
 	style.content_margin_right = texture_margin
@@ -149,7 +170,7 @@ static func make_button_texture_style(texture: Texture2D, tint: Color = Color.WH
 static func apply_texture_panel_skin(panel: Panel, texture_path: String, texture_margin: int = 32) -> bool:
 	if texture_path.is_empty() or not ResourceLoader.exists(texture_path):
 		return false
-	var texture: Texture2D = load(texture_path) as Texture2D
+	var texture: Texture2D = skin_texture(texture_path)
 	if texture == null:
 		return false
 	panel.add_theme_stylebox_override("panel", make_texture_style(texture, Color.WHITE, texture_margin))
@@ -158,13 +179,13 @@ static func apply_texture_panel_skin(panel: Panel, texture_path: String, texture
 static func apply_texture_button_skin(button: Button, texture_path: String, tint: Color = Color.WHITE, texture_margin: int = 28) -> bool:
 	if texture_path.is_empty() or not ResourceLoader.exists(texture_path):
 		return false
-	var texture: Texture2D = load(texture_path) as Texture2D
+	var texture: Texture2D = skin_texture(texture_path)
 	if texture == null:
 		return false
 	button.add_theme_stylebox_override("normal", make_texture_style(texture, tint, texture_margin))
 	button.add_theme_stylebox_override("hover", make_texture_style(texture, tint.lightened(0.06), texture_margin))
 	button.add_theme_stylebox_override("pressed", make_texture_style(texture, tint.darkened(0.08), texture_margin))
-	button.add_theme_stylebox_override("disabled", make_texture_style(texture, tint.darkened(0.28), texture_margin))
+	button.add_theme_stylebox_override("disabled", make_texture_style(texture, tint.lerp(Color("#e4ddd1"), 0.55), texture_margin))
 	return true
 
 static func set_layer_order(layer: Control, order: int) -> void:
@@ -225,6 +246,27 @@ static func make_key_button(value: String, background: Color, min_size: Vector2 
 	apply_font(button, FontRole.BOLD)
 	return button
 
+static func apply_scrollbar_skin(scroll: ScrollContainer, accent: Color = Color("#d98d9d")) -> void:
+	if scroll == null:
+		return
+	var track: StyleBoxFlat = rounded_style(Color(0.36, 0.24, 0.26, 0.10), Color.TRANSPARENT, 8, 0)
+	track.shadow_color = Color.TRANSPARENT
+	track.shadow_size = 0
+	var grabber: StyleBoxFlat = rounded_style(accent, accent.darkened(0.18), 8, 0)
+	grabber.shadow_color = Color(0.25, 0.12, 0.12, 0.12)
+	grabber.shadow_size = 3
+	var highlight: StyleBoxFlat = rounded_style(accent.lightened(0.10), accent.darkened(0.10), 8, 0)
+	highlight.shadow_color = Color(0.25, 0.12, 0.12, 0.12)
+	highlight.shadow_size = 3
+	for bar: ScrollBar in [scroll.get_v_scroll_bar(), scroll.get_h_scroll_bar()]:
+		if bar == null:
+			continue
+		bar.add_theme_stylebox_override("scroll", track)
+		bar.add_theme_stylebox_override("grabber", grabber)
+		bar.add_theme_stylebox_override("grabber_highlight", highlight)
+		bar.add_theme_stylebox_override("grabber_pressed", highlight)
+		bar.add_theme_constant_override("minimum_grabber_size", 52)
+
 static func make_safe_margin(parent: Control, margin: int = 52) -> MarginContainer:
 	var safe: MarginContainer = MarginContainer.new()
 	safe.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -235,6 +277,9 @@ static func make_safe_margin(parent: Control, margin: int = 52) -> MarginContain
 	safe.add_theme_constant_override("margin_bottom", int(maxf(64.0, insets.w)))
 	parent.add_child(safe)
 	return safe
+
+static func safe_bottom_margin(parent: Control, minimum: float = 64.0) -> float:
+	return maxf(minimum, safe_area_insets(parent).w)
 
 static func safe_area_insets(parent: Control) -> Vector4:
 	# DisplayServer returns screen-space pixels/points. Convert them to the

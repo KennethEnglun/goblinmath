@@ -16,6 +16,7 @@ const ANSWER_PANEL_PATH: String = "res://assets/ui/battle/battle_answer_panel_v1
 const KEY_BUTTON_SKIN_PATH: String = "res://assets/ui/battle/battle_key_button_skin_v1.png"
 const RESULT_PANEL_PATH: String = "res://assets/ui/battle/battle_result_panel_v1.png"
 const HEART_ICON_PATH: String = "res://assets/ui/battle/battle_heart_icon_v1.png"
+const DIAMOND_ICON_PATH: String = "res://assets/ui/gacha/gacha_diamond_icon_v1.png"
 var stage_data: Dictionary = {}
 var monster_data: Dictionary = {}
 var question_generator: QuestionGenerator
@@ -53,12 +54,16 @@ var monster_sprite: TextureRect
 var monster_hp_bar: ProgressBar
 var monster_hp_text: Label
 var enemy_attack_label: Label
+var enemy_attack_panel: Panel
 var question_label: Label
 var answer_label: Label
 var hearts_label: Label
+var heart_icons_container: HBoxContainer
+var heart_icons: Array[TextureRect] = []
 var level_label: Label
 var battle_pause_button: Button
 var combo_label: Label
+var feedback_panel: Panel
 var feedback_label: Label
 var keypad_buttons: Array[Button] = []
 
@@ -102,14 +107,30 @@ func _build_screen() -> void:
 	var top_bar: HBoxContainer = HBoxContainer.new()
 	top_bar.custom_minimum_size = Vector2(0, 112)
 	content.add_child(top_bar)
-	hearts_label = UITheme.make_label("HP %d / %d  ♥" % [player_hp, player_max_hp], 31, UITheme.RED)
+	var health_status: HBoxContainer = HBoxContainer.new()
+	health_status.name = "HealthStatus"
+	health_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	health_status.add_theme_constant_override("separation", 12)
+	health_status.alignment = BoxContainer.ALIGNMENT_BEGIN
+	top_bar.add_child(health_status)
+	hearts_label = UITheme.make_label("HP %d / %d" % [player_hp, player_max_hp], 31, Color("#8c2946"))
 	hearts_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	hearts_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hearts_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	health_status.add_child(hearts_label)
+	heart_icons_container = HBoxContainer.new()
+	heart_icons_container.name = "HeartIcons"
+	heart_icons_container.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	heart_icons_container.add_theme_constant_override("separation", 3)
+	heart_icons_container.alignment = BoxContainer.ALIGNMENT_BEGIN
+	health_status.add_child(heart_icons_container)
 	if ResourceLoader.exists(HEART_ICON_PATH):
-		var heart_icon: TextureRect = _make_sprite(HEART_ICON_PATH, Vector2(54, 54))
-		heart_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		top_bar.add_child(heart_icon)
-	top_bar.add_child(hearts_label)
+		for _index: int in range(GameManager.get_player_hearts()):
+			var heart_icon: TextureRect = _make_sprite(HEART_ICON_PATH, Vector2(36, 36))
+			heart_icon.name = "HeartIcon%d" % _index
+			heart_icon.custom_minimum_size = Vector2(36, 36)
+			heart_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			heart_icons_container.add_child(heart_icon)
+			heart_icons.append(heart_icon)
 	level_label = UITheme.make_label("LV.1\nATK 10  DEF 0", 24, UITheme.INK)
 	level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	level_label.custom_minimum_size = Vector2(180, 0)
@@ -152,11 +173,19 @@ func _build_screen() -> void:
 	monster_hp_text = UITheme.make_label("HP %d / %d" % [monster_hp, monster_hp], 19, UITheme.MUTED_INK)
 	monster_hp_text.custom_minimum_size = Vector2(0, 34)
 	content.add_child(monster_hp_text)
+	enemy_attack_panel = UITheme.make_panel(Color(1.0, 0.96, 0.90, 0.78), Color("#d9b36a"), 18, 2)
+	enemy_attack_panel.name = "EnemyAttackStatusPanel"
+	enemy_attack_panel.custom_minimum_size = Vector2(0, 46)
+	enemy_attack_panel.add_theme_stylebox_override("panel", _status_style(Color(1.0, 0.96, 0.90, 0.78), Color("#d9b36a"), 2))
 	enemy_attack_label = UITheme.make_label("", 18, UITheme.MUTED_INK)
 	enemy_attack_label.name = "EnemyAttackCountdown"
+	enemy_attack_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	enemy_attack_label.offset_left = 12.0
+	enemy_attack_label.offset_right = -12.0
 	enemy_attack_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	enemy_attack_label.custom_minimum_size = Vector2(0, 34)
-	content.add_child(enemy_attack_label)
+	enemy_attack_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	enemy_attack_panel.add_child(enemy_attack_label)
+	content.add_child(enemy_attack_panel)
 
 	question_label = UITheme.make_label("", 76, UITheme.INK)
 	question_label.custom_minimum_size = Vector2(0, 132)
@@ -173,9 +202,20 @@ func _build_screen() -> void:
 	combo_label = UITheme.make_label("", 25, UITheme.ORANGE)
 	combo_label.custom_minimum_size = Vector2(0, 48)
 	content.add_child(combo_label)
+	feedback_panel = UITheme.make_panel(Color.TRANSPARENT, Color.TRANSPARENT, 20, 0)
+	feedback_panel.name = "BattleFeedbackPanel"
+	feedback_panel.custom_minimum_size = Vector2(0, 72)
+	feedback_panel.add_theme_stylebox_override("panel", _status_style(Color.TRANSPARENT, Color.TRANSPARENT, 0))
 	feedback_label = UITheme.make_label("", 21, UITheme.MUTED_INK)
-	feedback_label.custom_minimum_size = Vector2(0, 42)
-	content.add_child(feedback_label)
+	feedback_label.name = "BattleFeedbackLabel"
+	feedback_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	feedback_label.offset_left = 18.0
+	feedback_label.offset_right = -18.0
+	feedback_label.offset_top = 6.0
+	feedback_label.offset_bottom = -6.0
+	feedback_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	feedback_panel.add_child(feedback_label)
+	content.add_child(feedback_panel)
 
 	var keypad: GridContainer = GridContainer.new()
 	keypad.name = "BattleKeypadLayer"
@@ -218,6 +258,12 @@ func _make_full_layer(layer_name: String, filter: Control.MouseFilter) -> Contro
 	add_child(layer)
 	return layer
 
+func _status_style(background: Color, border: Color, border_width: int) -> StyleBoxFlat:
+	var style: StyleBoxFlat = UITheme.rounded_style(background, border, 20, border_width)
+	style.shadow_color = Color.TRANSPARENT
+	style.shadow_size = 0
+	return style
+
 func _start_enemy_attack_timer() -> void:
 	enemy_attack_timer = Timer.new()
 	enemy_attack_timer.name = "EnemyAttackTimer"
@@ -253,22 +299,22 @@ func _update_enemy_attack_countdown() -> void:
 		enemy_attack_label.text = ""
 		return
 	if battle_paused:
-		enemy_attack_label.text = "⏸ PAUSED  ·  暫停中（倒數已停止）"
+		enemy_attack_label.text = "PAUSED  ·  暫停中（倒數已停止）"
 		enemy_attack_label.add_theme_color_override("font_color", UITheme.MUTED_INK)
 		return
 	if battle_suspended:
-		enemy_attack_label.text = "⏸ PAUSED  ·  回來後繼續"
+		enemy_attack_label.text = "PAUSED  ·  回來後繼續"
 		enemy_attack_label.add_theme_color_override("font_color", UITheme.MUTED_INK)
 		return
 	if enemy_attack_in_progress:
-		enemy_attack_label.text = "⚡ ENEMY ATTACK!  ·  敵人攻擊中"
+		enemy_attack_label.text = "ENEMY ATTACK!  ·  敵人攻擊中"
 		enemy_attack_label.add_theme_color_override("font_color", UITheme.RED.darkened(0.1))
 		return
 	if enemy_attack_timer == null:
 		return
 	var seconds_left: int = maxi(1, int(ceil(enemy_attack_timer.time_left)))
 	var incoming_damage: int = GameManager.calculate_incoming_damage(monster_attack)
-	enemy_attack_label.text = "⚡ %ds 後自動攻擊  ·  預計 -%d HP" % [seconds_left, incoming_damage]
+	enemy_attack_label.text = "AUTO %ds  ·  自動攻擊  -%d HP" % [seconds_left, incoming_damage]
 	var countdown_color: Color = UITheme.RED if seconds_left <= 2 else UITheme.MUTED_INK
 	enemy_attack_label.add_theme_color_override("font_color", countdown_color)
 
@@ -342,7 +388,7 @@ func _load_next_question() -> void:
 		return
 	answer_text = ""
 	answer_label.text = "—"
-	feedback_label.text = ""
+	_set_feedback("", UITheme.MUTED_INK, Color.TRANSPARENT, Color.TRANSPARENT, 0)
 	var scripted_question: Variant = stage_data.get("scripted_first_question", {})
 	if question_index == 0 and scripted_question is Dictionary and scripted_question.has("question_text") and scripted_question.has("answer"):
 		current_question = scripted_question.duplicate(true)
@@ -391,8 +437,7 @@ func _resolve_correct() -> void:
 	monster_hp = maxi(0, monster_hp - damage)
 	monster_hp_bar.value = monster_hp
 	monster_hp_text.text = "HP %d / %d" % [monster_hp, _get_monster_max_hp()]
-	feedback_label.text = "NICE!\n答對！"
-	feedback_label.add_theme_color_override("font_color", UITheme.GREEN.darkened(0.35))
+	_set_feedback("NICE!\n答對！", UITheme.GREEN.darkened(0.35), Color("#eff9db"), Color("#94c67e"), 2)
 	_update_combo()
 	_show_damage_number(damage)
 	_spawn_battle_effect(HIT_EFFECT_PATH, monster_sprite.get_global_rect().get_center(), Vector2(270, 270), 0.46)
@@ -412,8 +457,7 @@ func _resolve_wrong() -> void:
 	mistake_count += 1
 	var incoming_damage: int = GameManager.calculate_incoming_damage(monster_attack)
 	player_hp = maxi(0, player_hp - incoming_damage)
-	feedback_label.text = "-%d HP  ·  TRY AGAIN\n答錯了，再試一次" % incoming_damage
-	feedback_label.add_theme_color_override("font_color", UITheme.RED.darkened(0.15))
+	_set_feedback("-%d HP  ·  TRY AGAIN\n答錯了，再試一次" % incoming_damage, UITheme.RED.darkened(0.15), Color("#fff0ef"), Color("#e89aa0"), 2)
 	_update_combo()
 	_update_hearts()
 	_spawn_battle_effect(MISS_EFFECT_PATH, player_sprite.get_global_rect().get_center(), Vector2(210, 210), 0.42)
@@ -441,8 +485,7 @@ func _on_enemy_attack_timer_timeout() -> void:
 	var incoming_damage: int = GameManager.calculate_incoming_damage(monster_attack)
 	player_hp = maxi(0, player_hp - incoming_damage)
 	enemy_auto_attack_count += 1
-	feedback_label.text = "AUTO ATTACK!\n敵人自動攻擊  -%d HP" % incoming_damage
-	feedback_label.add_theme_color_override("font_color", UITheme.RED.darkened(0.1))
+	_set_feedback("AUTO ATTACK!\n敵人自動攻擊  -%d HP" % incoming_damage, UITheme.RED.darkened(0.1), Color("#fff0ef"), Color("#e89aa0"), 2)
 	_update_hearts()
 	_show_player_damage_number(incoming_damage)
 	_spawn_battle_effect(MISS_EFFECT_PATH, player_sprite.get_global_rect().get_center(), Vector2(210, 210), 0.42)
@@ -620,16 +663,32 @@ func _spawn_battle_effect(texture_path: String, center: Vector2, effect_size: Ve
 
 func _update_hearts() -> void:
 	var total_hearts: int = GameManager.get_player_hearts()
-	var heart_display: String = ""
-	if player_hp >= player_max_hp:
-		heart_display = "♥".repeat(total_hearts)
-	else:
-		var filled_hearts: int = clampi(int(floor(float(player_hp) / 10.0)), 0, total_hearts)
-		var has_partial_heart: bool = player_hp > 0 and (player_hp % 10) != 0 and filled_hearts < total_hearts
-		var partial_hearts: int = 1 if has_partial_heart else 0
-		var empty_hearts: int = maxi(0, total_hearts - filled_hearts - partial_hearts)
-		heart_display = "♥".repeat(filled_hearts) + "◐".repeat(partial_hearts) + "♡".repeat(empty_hearts)
-	hearts_label.text = "HP %d / %d  %s" % [player_hp, player_max_hp, heart_display]
+	var filled_hearts: int = clampi(int(floor(float(player_hp) / 10.0)), 0, total_hearts)
+	var has_partial_heart: bool = player_hp > 0 and (player_hp % 10) != 0 and filled_hearts < total_hearts
+	if heart_icons.is_empty():
+		var heart_display: String = "♥".repeat(filled_hearts)
+		if has_partial_heart:
+			heart_display += "◐"
+		heart_display += "♡".repeat(maxi(0, total_hearts - filled_hearts - (1 if has_partial_heart else 0)))
+		hearts_label.text = "HP %d / %d  %s" % [player_hp, player_max_hp, heart_display]
+		return
+	for index: int in range(heart_icons.size()):
+		var heart_icon: TextureRect = heart_icons[index]
+		if index < filled_hearts:
+			heart_icon.modulate = Color.WHITE
+		elif index == filled_hearts and has_partial_heart:
+			heart_icon.modulate = Color(1.0, 0.72, 0.78, 0.76)
+		else:
+			heart_icon.modulate = Color(0.62, 0.54, 0.56, 0.40)
+	hearts_label.text = "HP %d / %d" % [player_hp, player_max_hp]
+
+func _set_feedback(text_value: String, text_color: Color, background: Color, border: Color, border_width: int) -> void:
+	if feedback_label == null:
+		return
+	feedback_label.text = text_value
+	feedback_label.add_theme_color_override("font_color", text_color)
+	if feedback_panel != null:
+		feedback_panel.add_theme_stylebox_override("panel", _status_style(background, border, border_width))
 
 func _update_level() -> void:
 	level_label.text = "LV.%d\nATK %d  DEF %d" % [GameManager.get_level(), GameManager.get_attack(), GameManager.get_defense()]
@@ -638,7 +697,7 @@ func _update_combo() -> void:
 	if combo <= 0:
 		combo_label.text = ""
 	else:
-		combo_label.text = "🔥 %d COMBO  /  連擊" % combo
+		combo_label.text = "%d COMBO  /  連擊" % combo
 
 func _set_keypad_disabled(disabled: bool) -> void:
 	for button: Button in keypad_buttons:
@@ -704,8 +763,8 @@ func _show_result_panel(victory: bool, result: Dictionary) -> void:
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	margin.add_theme_constant_override("margin_left", 55)
 	margin.add_theme_constant_override("margin_right", 55)
-	margin.add_theme_constant_override("margin_top", 48)
-	margin.add_theme_constant_override("margin_bottom", 48)
+	margin.add_theme_constant_override("margin_top", 64)
+	margin.add_theme_constant_override("margin_bottom", 64)
 	card.add_child(margin)
 	var stack: VBoxContainer = VBoxContainer.new()
 	stack.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -729,18 +788,18 @@ func _show_result_panel(victory: bool, result: Dictionary) -> void:
 		var stars: int = clampi(int(result.get("best_stars", result.get("stars", 1))), 1, GameBalance.MAX_STAGE_STARS)
 		var star_text: String = "★".repeat(stars) + "☆".repeat(GameBalance.MAX_STAGE_STARS - stars)
 		rewards.add_child(UITheme.make_label("%s  本關評價" % star_text, 34, UITheme.ORANGE))
-		rewards.add_child(UITheme.make_label("★  +%d EXP" % int(result.get("exp", 0)), 32, UITheme.MUTED_INK))
-		rewards.add_child(UITheme.make_label("◉  +%d COINS" % int(result.get("coins", 0)), 32, UITheme.MUTED_INK))
+		rewards.add_child(UITheme.make_label("EXP  +%d" % int(result.get("exp", 0)), 32, UITheme.MUTED_INK))
+		rewards.add_child(UITheme.make_label("COINS  +%d" % int(result.get("coins", 0)), 32, UITheme.MUTED_INK))
 		if int(result.get("gems", 0)) > 0:
-			rewards.add_child(UITheme.make_label("💎  +%d GEMS  ·  鑽石" % int(result.get("gems", 0)), 32, Color("#c58d2a")))
+			rewards.add_child(_make_reward_line("+%d GEMS  ·  鑽石" % int(result.get("gems", 0)), 32, Color("#c58d2a"), DIAMOND_ICON_PATH))
 		rewards.add_child(UITheme.make_label("ACCURACY %d%%  ·  錯題 %d" % [int(round(float(result.get("accuracy", 1.0)) * 100.0)), int(result.get("mistakes", 0))], 22, UITheme.MUTED_INK))
 		if enemy_auto_attack_count > 0:
-			rewards.add_child(UITheme.make_label("⚡ AUTO HITS %d  ·  自動受擊" % enemy_auto_attack_count, 21, UITheme.RED.darkened(0.15)))
+			rewards.add_child(UITheme.make_label("AUTO HITS %d  ·  自動受擊" % enemy_auto_attack_count, 21, UITheme.RED.darkened(0.15)))
 		if not bool(result.get("first_clear", true)):
 			rewards.add_child(UITheme.make_label("REPLAY REWARD 50%  ·  重玩獎勵", 20, UITheme.MUTED_INK))
 		var dropped_item: Variant = result.get("dropped_item", {})
 		if dropped_item is Dictionary and not dropped_item.is_empty():
-			rewards.add_child(UITheme.make_label("🎁 %s" % EquipmentSystem.describe_item(dropped_item), 24, UITheme.MINT_DARK))
+			rewards.add_child(UITheme.make_label("DROP  %s" % EquipmentSystem.describe_item(dropped_item), 24, UITheme.MINT_DARK))
 		elif int(result.get("auto_salvage_coins", 0)) > 0:
 			rewards.add_child(UITheme.make_label("背包已滿，自動換成 %d 金幣" % int(result.get("auto_salvage_coins", 0)), 21, UITheme.MINT_DARK))
 		if bool(result.get("world_complete", false)):
@@ -759,7 +818,7 @@ func _show_result_panel(victory: bool, result: Dictionary) -> void:
 	else:
 		stack.add_child(UITheme.make_dual_label("TRY AGAIN", "再試一次", 58, 28, UITheme.INK))
 		stack.add_child(UITheme.make_label("Your HP reached zero.\n生命值歸零了。", 26, UITheme.MUTED_INK))
-		stack.add_child(UITheme.make_label("⚡ 自動受擊 %d 次  ·  敵人攻擊會隨關卡加快" % enemy_auto_attack_count, 21, UITheme.RED.darkened(0.15)))
+		stack.add_child(UITheme.make_label("AUTO ATTACKS %d  ·  敵人攻擊會隨關卡加快" % enemy_auto_attack_count, 21, UITheme.RED.darkened(0.15)))
 		var retry_button: Button = UITheme.make_button("RETRY", "再挑戰一次", UITheme.YELLOW, Vector2(0, 120))
 		retry_button.name = "RetryBattleButton"
 		retry_button.pressed.connect(_on_retry_pressed)
@@ -768,6 +827,23 @@ func _show_result_panel(victory: bool, result: Dictionary) -> void:
 		map_button.name = "DefeatMapButton"
 		map_button.pressed.connect(_on_map_pressed)
 		stack.add_child(map_button)
+	# Level-up, drops and chapter rewards can all appear in the same result.
+	card.custom_minimum_size.y = maxf(card.custom_minimum_size.y, stack.get_combined_minimum_size().y + 128.0)
+
+func _make_reward_line(text_value: String, font_size: int, color: Color, icon_path: String = "") -> HBoxContainer:
+	var row: HBoxContainer = HBoxContainer.new()
+	row.name = "RewardLine"
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 10)
+	row.custom_minimum_size = Vector2(0, maxf(44.0, float(font_size) + 12.0))
+	if not icon_path.is_empty() and ResourceLoader.exists(icon_path):
+		var icon: TextureRect = _make_sprite(icon_path, Vector2(34, 34))
+		icon.name = "RewardIcon"
+		icon.custom_minimum_size = Vector2(34, 34)
+		icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(icon)
+	row.add_child(UITheme.make_label(text_value, font_size, color))
+	return row
 
 func _on_continue_pressed() -> void:
 	AudioManager.play_sfx("button_click")
