@@ -1,7 +1,10 @@
-# Dedicated PvP match server (headless Godot), built fully from source.
-# Railway builds this straight from the GitHub repo — no local export needed.
-# Stage 1 downloads Godot 4.6.3-stable + Linux export templates and exports
-# the "Linux Server" preset; stage 2 ships the binary on a slim runtime.
+# Dedicated PvP match server (headless Godot behind nginx), built fully from
+# source. Railway builds this straight from the GitHub repo.
+#
+# Port layout inside the container:
+#   9123 = nginx (public; Railway domain target port). Answers /healthz for
+#          the edge and proxies WebSocket upgrades to Godot.
+#   9124 = Godot WebSocket match server (loopback only).
 FROM debian:bookworm-slim AS export
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends ca-certificates curl unzip \
@@ -24,16 +27,16 @@ RUN mkdir -p /out \
 
 FROM debian:bookworm-slim
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends ca-certificates \
+	&& apt-get install -y --no-install-recommends ca-certificates nginx \
 	&& rm -rf /var/lib/apt/lists/* \
+	&& rm -f /etc/nginx/sites-enabled/default \
 	&& useradd --system --uid 1001 pvp \
 	&& mkdir -p /home/pvp/.local/share/godot \
 	&& chown -R pvp:pvp /home/pvp
 WORKDIR /app
 COPY --from=export /out/server.x86_64 /app/server.x86_64
-RUN chmod +x /app/server.x86_64
-USER pvp
-ENV PVP_SERVER=1
-ENV HOME=/home/pvp
+COPY nginx-pvp.conf /etc/nginx/conf.d/pvp.conf
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /app/server.x86_64 /entrypoint.sh
 EXPOSE 9123
-CMD ["/app/server.x86_64", "--pvp-server", "--headless"]
+ENTRYPOINT ["/entrypoint.sh"]
