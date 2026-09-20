@@ -67,7 +67,7 @@ func _build(stage_data: Dictionary) -> void:
 		add_child(crown)
 
 	if stage_status == &"locked":
-		_add_badge(LOCK_TEXTURE, "鎖", Color("#8b7778"), Vector2(150, 4))
+		_add_badge(LOCK_TEXTURE, LanguageManager.t("map.lock"), Color("#8b7778"), Vector2(150, 4))
 	elif stage_status == &"completed":
 		_add_badge(STAR_TEXTURE, "★", Color("#f0aa45"), Vector2(150, 4))
 
@@ -77,7 +77,8 @@ func _build(stage_data: Dictionary) -> void:
 	caption_panel.size = Vector2(240, 58)
 	caption_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(caption_panel)
-	var caption_text: String = str(stage_data.get("name_zh", "第 %d 關" % stage_id))
+	var stage_display_name: String = LanguageManager.pick(stage_data)
+	var caption_text: String = stage_display_name if not stage_display_name.is_empty() else LanguageManager.tf("map.stage_fallback", [stage_id])
 	if stage_status == &"completed":
 		var best_stars: int = GameManager.get_stage_stars(stage_id)
 		if best_stars > 0:

@@ -3,6 +3,10 @@ extends Node
 ## Versioned local persistence with migration, normalization, and a backup file.
 const SAVE_VERSION: int = 8
 const SAVE_PATH: String = "user://save.json"
+# Keep literal language codes here: SaveManager normalizes during autoload
+# startup before the LanguageManager node is guaranteed to exist.
+const DEFAULT_LANGUAGE: String = "zh_tw"
+const VALID_LANGUAGES: Array[String] = ["zh_tw", "en", "ja"]
 
 var current_data: Dictionary = {}
 var storage_path: String = SAVE_PATH
@@ -11,9 +15,12 @@ func _ready() -> void:
 	current_data = load_game()
 
 func create_new_save() -> Dictionary:
-	var starter: Dictionary = EquipmentSystem.starter_item()
+	# Equipment is now exclusive to gacha pulls, so a fresh save starts with an
+	# empty bag instead of a starter weapon.
 	return {
 		"save_version": SAVE_VERSION,
+		"language": DEFAULT_LANGUAGE,
+		"player_name": "",
 		"level": GameBalance.BASE_LEVEL,
 		"exp": GameBalance.BASE_EXP,
 		"coins": GameBalance.BASE_COINS,
@@ -33,10 +40,11 @@ func create_new_save() -> Dictionary:
 		"completed_stages": [],
 		"stage_scores": {},
 		"stage_attempts": {},
-		"inventory": [starter] if not starter.is_empty() else [],
-		"equipped": {"weapon": str(starter.get("uid", "")), "head": "", "body": ""},
-		"next_item_uid": 2,
-		"loot_pity": 0,
+		"inventory": [],
+		"equipped": {"weapon": "", "head": "", "body": ""},
+		"next_item_uid": 1,
+		"stamina": GameBalance.STAMINA_MAX,
+		"stamina_updated_at": int(Time.get_unix_time_from_system()),
 		"total_victories": 0,
 		"total_defeats": 0,
 		"highest_combo": 0,
@@ -109,6 +117,10 @@ func save_game(data: Dictionary = current_data) -> bool:
 func reset_save() -> Dictionary:
 	return _replace_with_new_save()
 
+func set_player_name(value: String) -> void:
+	current_data["player_name"] = value.strip_edges().substr(0, 16)
+	save_game(current_data)
+
 func _replace_with_new_save() -> Dictionary:
 	var fresh: Dictionary = create_new_save()
 	current_data = fresh.duplicate(true)
@@ -149,6 +161,10 @@ func _normalize_save(raw: Dictionary) -> Dictionary:
 			normalized[key] = raw[key]
 
 	normalized["save_version"] = SAVE_VERSION
+	var stored_language: String = str(raw.get("language", normalized["language"]))
+	normalized["language"] = stored_language if VALID_LANGUAGES.has(stored_language) else DEFAULT_LANGUAGE
+	var stored_name: String = str(raw.get("player_name", "")).strip_edges()
+	normalized["player_name"] = stored_name.substr(0, 16)
 	normalized["level"] = clampi(_to_int(normalized["level"], GameBalance.BASE_LEVEL), 1, 2_000_000_000)
 	normalized["exp"] = clampi(_to_int(normalized["exp"], GameBalance.BASE_EXP), 0, GameBalance.required_exp(int(normalized["level"])) * 10_000)
 	normalized["coins"] = maxi(0, _to_int(normalized["coins"], GameBalance.BASE_COINS))
@@ -202,7 +218,15 @@ func _normalize_save(raw: Dictionary) -> Dictionary:
 	normalized["next_item_uid"] = maxi(_to_int(normalized["next_item_uid"], 1), _next_uid_after_inventory(inventory))
 	normalized["equipped"] = _normalize_equipped(raw, inventory, normalized.get("equipped", {}))
 
-	normalized["loot_pity"] = clampi(_to_int(normalized["loot_pity"], 0), 0, 4)
+	# Stamina regen is rolled forward here so persisted values stay fresh across
+	# saves and read-only queries (which recompute from the same formula) agree.
+	var stamina_regen: Dictionary = GameBalance.apply_stamina_regen(
+		_to_int(normalized["stamina"], GameBalance.STAMINA_MAX),
+		_to_int(normalized["stamina_updated_at"], 0),
+		Time.get_unix_time_from_system()
+	)
+	normalized["stamina"] = int(stamina_regen.get("stamina", GameBalance.STAMINA_MAX))
+	normalized["stamina_updated_at"] = int(stamina_regen.get("updated_at", 0))
 	normalized["total_victories"] = maxi(0, _to_int(normalized["total_victories"], 0))
 	normalized["total_defeats"] = maxi(0, _to_int(normalized["total_defeats"], 0))
 	normalized["highest_combo"] = maxi(0, _to_int(normalized["highest_combo"], 0))

@@ -21,7 +21,9 @@ func _run_tests() -> void:
 	_test_character_progression()
 	_test_character_store()
 	_test_equipment_actions()
+	_test_stamina_system()
 	_test_gacha_system()
+	_test_language_system()
 	_test_project_settings()
 
 	if failures == 0:
@@ -137,6 +139,37 @@ func _test_assets_and_authored_data() -> void:
 		equipment_sprite_paths[sprite_path] = template_id
 	_check(not DataManager.get_equipment("rainbow_star_staff").is_empty() and str(DataManager.get_equipment("crown_staff").get("merge_to", "")) == "rainbow_star_staff", "Legendary merge targets are data-driven")
 	_check(DataManager.get_gacha_config().get("single_cost", 0) == 100 and DataManager.get_gacha_config().get("ten_cost", 0) == 1000, "Gacha economy data loads")
+	_check(DataManager.is_gacha_test_cost_enabled() and GachaSystem.pull_cost(1) == 0 and GachaSystem.pull_cost(10) == 0, "Gacha test-cost mode makes pulls free while enabled")
+
+func _test_stamina_system() -> void:
+	_check(GameBalance.STAMINA_MAX == 20 and GameBalance.STAMINA_PER_STAGE == 1 and GameBalance.STAMINA_AD_REWARD == 5, "Stamina economy constants match the design")
+	_check(GameBalance.STAMINA_REGEN_SECONDS == 600.0, "Stamina regenerates one point every ten minutes")
+	var fresh: Dictionary = SaveManager.create_new_save()
+	_check(int(fresh.get("stamina", -1)) == GameBalance.STAMINA_MAX and int(fresh.get("stamina_updated_at", 0)) > 0, "Fresh saves start with a full stamina bar")
+	var anchor: int = 1_700_000_000
+	_check(int(GameBalance.apply_stamina_regen(20, anchor, float(anchor) + 1000.0).get("stamina", -1)) == 20, "A full stamina bar never regenerates past the cap")
+	var partial: Dictionary = GameBalance.apply_stamina_regen(13, anchor, float(anchor) + 1800.0)
+	_check(int(partial.get("stamina", -1)) == 16 and int(partial.get("updated_at", -1)) == anchor + 1800, "Offline regen grants one point per ten elapsed minutes")
+	var partial_tick: Dictionary = GameBalance.apply_stamina_regen(13, anchor, float(anchor) + 1500.0)
+	_check(int(partial_tick.get("stamina", -1)) == 15 and int(partial_tick.get("updated_at", -1)) == anchor + 1200, "Partial regen intervals keep the leftover countdown window")
+	var capped: Dictionary = GameBalance.apply_stamina_regen(19, anchor, float(anchor) + 100_000.0)
+	_check(int(capped.get("stamina", -1)) == GameBalance.STAMINA_MAX, "Long offline periods refill to the cap without overflowing")
+	var negative: Dictionary = GameBalance.apply_stamina_regen(-3, anchor, float(anchor) + 600.0)
+	_check(int(negative.get("stamina", -1)) >= 0, "Corrupted negative stamina values clamp to zero before regen")
+
+	GameManager.player_state = SaveManager.create_new_save()
+	GameManager.player_state["unlocked_stage"] = 3
+	_check(GameManager.get_stamina() == GameBalance.STAMINA_MAX, "GameManager reads the lazy stamina value")
+	_check(GameManager.consume_stamina(GameBalance.STAMINA_PER_STAGE), "Spending stamina succeeds while points remain")
+	_check(GameManager.get_stamina() == GameBalance.STAMINA_MAX - 1, "Spent stamina is reflected immediately")
+	var drained: Dictionary = GameManager.player_state.duplicate(true)
+	drained["stamina"] = 0
+	GameManager.player_state = drained
+	_check(not GameManager.consume_stamina(GameBalance.STAMINA_PER_STAGE), "Stage entry is blocked at zero stamina")
+	_check(not GameManager.start_stage(1), "start_stage refuses to launch a battle without stamina")
+	_check(GameManager.add_stamina(GameBalance.STAMINA_AD_REWARD) and GameManager.get_stamina() == GameBalance.STAMINA_AD_REWARD, "A rewarded ad grants five stamina points")
+	# The successful start_stage path triggers a real scene transition, which
+	# would replace this runner; it is covered by the runtime flow suite instead.
 
 func _test_endless_stage_generation() -> void:
 	_check(DataManager.get_next_stage_id(9) == 10, "Stage 9 advances to the authored boss")
@@ -357,8 +390,8 @@ func _test_bounded_endless_metadata() -> void:
 
 func _test_character_progression() -> void:
 	GameManager.player_state = SaveManager.create_new_save()
-	_check(GameManager.get_inventory().size() == 1 and not GameManager.get_equipped_uid("weapon").is_empty(), "A new goblin starts with an equipped club")
-	_check(GameManager.get_attack() > GameManager.get_base_attack(), "Equipped gear contributes to combat stats")
+	_check(GameManager.get_inventory().is_empty() and GameManager.get_equipped_uid("weapon").is_empty(), "A new goblin starts with an empty bag; gear comes only from gacha")
+	_check(GameManager.get_attack() == GameManager.get_base_attack(), "Fresh combat stats come from the base profile without gear")
 
 	GameManager.player_state["current_stage"] = 1
 	var stage_one_result: Dictionary = GameManager.apply_victory(20, 10, {"highest_combo": 3, "correct_answers": 3, "total_answers": 3})
@@ -388,7 +421,8 @@ func _test_character_progression() -> void:
 	_check(bool(boss_result.get("world_complete", false)), "Boss victory reports the completed chapter/world milestone")
 	_check(GameManager.map_focus_stage == 10, "Boss victory prepares a one-time map focus on the completed boss")
 	_check(int(boss_result.get("stage_unlocked", 0)) == 11 and GameManager.is_stage_unlocked(11), "Chapter 1 boss unlocks generated Stage 11")
-	_check(not (boss_result.get("dropped_item", {}) as Dictionary).is_empty(), "Boss victory guarantees equipment")
+	_check(not boss_result.has("dropped_item") and not boss_result.has("auto_salvage_coins"), "Victories no longer drop equipment; gear comes only from gacha")
+	_check(GameManager.get_inventory().is_empty(), "Victory rewards leave the inventory untouched")
 
 	GameManager.player_state = SaveManager.create_new_save()
 	GameManager.player_state["current_stage"] = 20
@@ -463,10 +497,11 @@ func _test_equipment_actions() -> void:
 	var percent_level_twenty: Dictionary = EquipmentSystem.get_item_stats(EquipmentSystem.create_instance("crown_staff", "formula_percent_20", 20, 10))
 	_check(float(percent_level_twenty.get("exp_bonus", 0.0)) > float(percent_level_one.get("exp_bonus", 0.0)) and float(percent_level_twenty.get("exp_bonus", 0.0)) <= 0.75, "Percentage equipment bonuses scale by level and stay bounded")
 	var duplicate_state: Dictionary = SaveManager.create_new_save()
+	duplicate_state["inventory"] = [EquipmentSystem.create_instance("twig_club", "item_1", 1, 0)]
 	duplicate_state["equipped"] = {"weapon": "item_1", "head": "item_1", "body": ""}
 	var duplicate_aggregate: Dictionary = EquipmentSystem.aggregate_equipped_stats(duplicate_state)
-	var starter_stats: Dictionary = EquipmentSystem.get_item_stats(EquipmentSystem.starter_item())
-	_check(int(duplicate_aggregate.get("attack", 0)) == int(starter_stats.get("attack", 0)), "The same equipped UID cannot double-count across slots")
+	var base_weapon_stats: Dictionary = EquipmentSystem.get_item_stats(EquipmentSystem.create_instance("twig_club", "item_1", 1, 0))
+	_check(int(duplicate_aggregate.get("attack", 0)) == int(base_weapon_stats.get("attack", 0)), "The same equipped UID cannot double-count across slots")
 	var inventory: Array = GameManager.get_inventory()
 	var rare_item: Dictionary = EquipmentSystem.create_instance("star_hammer", "item_2", 1, 8)
 	inventory.append(rare_item)
@@ -480,8 +515,6 @@ func _test_equipment_actions() -> void:
 	_check(not bool(GameManager.sell_item("item_2").get("success", false)), "Equipped gear cannot be sold accidentally")
 	_check(GameManager.unequip_slot("weapon"), "Equipment can be removed")
 	_check(bool(GameManager.sell_item("item_2").get("success", false)), "Unequipped gear can be sold")
-	var guaranteed_drop: Dictionary = EquipmentSystem.roll_drop(20, 0, 1, 0, true)
-	_check(not guaranteed_drop.is_empty() and guaranteed_drop == EquipmentSystem.roll_drop(20, 0, 1, 0, true), "Drop generation is deterministic and boss-safe")
 
 func _test_gacha_system() -> void:
 	_check(GachaSystem.get_available_rarities(0) == ["common"], "Fresh players only see the common gacha pool")
@@ -490,9 +523,9 @@ func _test_gacha_system() -> void:
 
 	var fresh_state: Dictionary = SaveManager.create_new_save()
 	var one_pull: Dictionary = GachaSystem.roll(fresh_state, 1, 1001)
-	_check(bool(one_pull.get("success", false)) and int(one_pull.get("cost", 0)) == 100 and (one_pull.get("items", []) as Array).size() == 1, "Single pull costs 100 gems and returns one item")
+	_check(bool(one_pull.get("success", false)) and int(one_pull.get("cost", 0)) == 0 and (one_pull.get("items", []) as Array).size() == 1, "Test-cost mode makes a single pull free and returns one item")
 	var ten_state: Dictionary = SaveManager.create_new_save()
-	ten_state["gems"] = 1000
+	ten_state["gems"] = 0
 	ten_state["highest_completed_stage"] = 10
 	var ten_pull: Dictionary = GachaSystem.roll(ten_state, 10, 1002)
 	var ten_items: Array = ten_pull.get("items", [])
@@ -500,10 +533,11 @@ func _test_gacha_system() -> void:
 	for item: Dictionary in ten_items:
 		if ["uncommon", "rare", "epic"].has(str(item.get("rarity", ""))):
 			has_uncommon_plus = true
-	_check(bool(ten_pull.get("success", false)) and int(ten_pull.get("cost", 0)) == 1000 and ten_items.size() == 10 and has_uncommon_plus, "Ten pull costs 1000 gems and guarantees an available higher rarity")
-	var no_gems_state: Dictionary = SaveManager.create_new_save()
-	no_gems_state["gems"] = 99
-	_check(not bool(GachaSystem.roll(no_gems_state, 1, 1003).get("success", false)), "Insufficient gems reject a pull without changing state")
+	_check(bool(ten_pull.get("success", false)) and int(ten_pull.get("cost", 0)) == 0 and ten_items.size() == 10 and has_uncommon_plus, "Test-cost mode keeps the ten-pull guarantee without charging gems")
+	var empty_pool_state: Dictionary = SaveManager.create_new_save()
+	empty_pool_state["highest_completed_stage"] = 0
+	var invalid_count: Dictionary = GachaSystem.roll(empty_pool_state, 7, 1003)
+	_check(not bool(invalid_count.get("success", false)) and str(invalid_count.get("reason", "")) == "invalid_pull_count", "Unsupported pull counts are still rejected")
 
 	GameManager.player_state = SaveManager.create_new_save()
 	var merge_inventory: Array = GameManager.get_inventory()
@@ -535,12 +569,11 @@ func _test_gacha_system() -> void:
 	_check(bool(equipped_merge_result.get("success", false)) and str(GameManager.get_equipped_uid("head")) == str(equipped_merge_item.get("uid", "")), "Manual merge replaces a consumed equipped slot with the new item")
 
 	GameManager.player_state = SaveManager.create_new_save()
-	var chain_inventory: Array = GameManager.get_inventory()
+	var chain_inventory: Array = [EquipmentSystem.create_instance("twig_club", "chain_1", 1, 1)]
 	for index: int in range(2, 10):
 		var chain_level: int = 2 if index == 2 else (3 if index == 3 else 1)
 		var chain_spent: int = EquipmentSystem.upgrade_coins_spent_for_level(chain_level, "common")
 		chain_inventory.append(EquipmentSystem.create_instance("twig_club", "chain_%d" % index, chain_level, 1, chain_spent))
-	chain_inventory[0]["uid"] = "chain_1"
 	GameManager.player_state["inventory"] = chain_inventory
 	GameManager.player_state["equipped"] = {"weapon": "chain_1", "head": "", "body": ""}
 	GameManager.player_state["next_item_uid"] = 1
@@ -585,6 +618,63 @@ func _test_gacha_system() -> void:
 		large_inventory.append(EquipmentSystem.create_instance("twig_club", "large_%d" % index, 1, 1))
 	var normalized_large: Dictionary = SaveManager._normalize_save({"inventory": large_inventory})
 	_check((normalized_large.get("inventory", []) as Array).size() == 130, "Inventory normalization no longer truncates at 120 items")
+
+func _test_language_system() -> void:
+	GameManager.player_state = SaveManager.create_new_save()
+	_check(LanguageManager.get_language() == LanguageManager.LANGUAGE_ZH_TW, "Fresh saves default to Traditional Chinese")
+	_check(LanguageManager.t("map.chapter") == "第%d章" and LanguageManager.tf("map.chapter", [3]) == "第3章", "zh_tw resolves the authored translation with arguments")
+	var pair_zh: Array = LanguageManager.pair("map.home")
+	_check(pair_zh == ["首頁", "回到開始"], "zh_tw keeps the original dual-line button pair")
+
+	_check(LanguageManager.set_language(LanguageManager.LANGUAGE_EN), "Switching to English succeeds")
+	_check(LanguageManager.get_language() == LanguageManager.LANGUAGE_EN and str(GameManager.player_state.get("language", "")) == "en", "The language choice persists into the save state")
+	_check(LanguageManager.tf("map.chapter", [3]) == "CH 3", "English resolves its own translation")
+	_check(LanguageManager.pair("map.home") == ["HOME", ""], "English renders a single primary line")
+	_check(LanguageManager.t("common.rarity_epic") == "EPIC", "English rarity labels resolve")
+
+	_check(LanguageManager.set_language(LanguageManager.LANGUAGE_JA), "Switching to Japanese succeeds")
+	_check(LanguageManager.tf("map.chapter", [3]) == "第3章" and LanguageManager.tf("battle.auto_attack_countdown", [5, 7]) == "オート5s・こうげき -7 HP", "Japanese resolves its own translations")
+	_check(LanguageManager.pair("battle.victory") == ["しょうり！", ""], "Japanese en-first pairs render a single line")
+	_check(LanguageManager.pick(DataManager.get_stage(1)) == "花野の入口", "Japanese picks the authored name_ja field")
+	_check(LanguageManager.pick(DataManager.get_monster("green_blob")) == "みどり豆スライム", "Japanese picks monster name_ja")
+	_check(LanguageManager.pick(DataManager.get_equipment("twig_club")) == "若枝のこん棒", "Japanese picks equipment name_ja")
+	_check(LanguageManager.pick(DataManager.get_character("rabbit_scout")) == "うさぎスカウト", "Japanese picks character name_ja")
+	var endless_stage: Dictionary = DataManager.get_stage(11)
+	_check(LanguageManager.pick(endless_stage) == "第2章・朝露の入口", "Generated endless stages carry Japanese names")
+
+	var normalized_language: Dictionary = SaveManager._normalize_save({"language": "fr"})
+	_check(str(normalized_language.get("language", "")) == SaveManager.DEFAULT_LANGUAGE, "Invalid persisted languages fall back to the default")
+
+	# Glyph coverage: every translation must be renderable by its language's font.
+	var zh_font: Font = UITheme.shared_font_for_language(LanguageManager.LANGUAGE_ZH_TW, UITheme.FontRole.BODY)
+	var jp_font: Font = UITheme.shared_font_for_language(LanguageManager.LANGUAGE_JA, UITheme.FontRole.BODY)
+	var en_font: Font = UITheme.shared_font_for_language(LanguageManager.LANGUAGE_EN, UITheme.FontRole.BODY)
+	_check(zh_font != null and jp_font != null and en_font != null, "All three language fonts load")
+	var missing_zh: String = ""
+	var missing_ja: String = ""
+	var missing_en: String = ""
+	var keys: Array = LanguageManager._table.keys()
+	for raw_key: Variant in keys:
+		var entry: Dictionary = LanguageManager._table[str(raw_key)]
+		for glyph_index: int in range(str(entry.get("zh", "")).length()):
+			var codepoint: int = str(entry["zh"]).unicode_at(glyph_index)
+			if codepoint > 127 and not zh_font.has_char(codepoint) and not missing_zh.contains(str(entry["zh"])[glyph_index]):
+				missing_zh += str(entry["zh"])[glyph_index]
+		for glyph_index: int in range(str(entry.get("ja", "")).length()):
+			var codepoint: int = str(entry["ja"]).unicode_at(glyph_index)
+			if codepoint > 127 and not jp_font.has_char(codepoint) and not missing_ja.contains(str(entry["ja"])[glyph_index]):
+				missing_ja += str(entry["ja"])[glyph_index]
+		for glyph_index: int in range(str(entry.get("en", "")).length()):
+			var codepoint: int = str(entry["en"]).unicode_at(glyph_index)
+			if codepoint > 127 and not en_font.has_char(codepoint) and not missing_en.contains(str(entry["en"])[glyph_index]):
+				missing_en += str(entry["en"])[glyph_index]
+	_check(missing_zh.is_empty(), "Traditional Chinese font covers every zh table glyph: %s" % missing_zh)
+	_check(missing_ja.is_empty(), "Japanese font covers every ja table glyph: %s" % missing_ja)
+	_check(missing_en.is_empty(), "Latin font covers every en table glyph: %s" % missing_en)
+
+	LanguageManager.set_language(LanguageManager.LANGUAGE_ZH_TW)
+	_check(LanguageManager.cycle_language() == LanguageManager.LANGUAGE_EN and LanguageManager.cycle_language() == LanguageManager.LANGUAGE_JA and LanguageManager.cycle_language() == LanguageManager.LANGUAGE_ZH_TW, "Cycle moves zh_tw → en → ja → zh_tw")
+	GameManager.player_state = SaveManager.create_new_save()
 
 func _test_project_settings() -> void:
 	var features: PackedStringArray = ProjectSettings.get_setting("application/config/features", PackedStringArray())

@@ -3,10 +3,13 @@ extends Node
 ## Owns the platform-specific rewarded-ad lifecycle and exposes a small,
 ## verified callback to the game layer. Desktop and Web builds intentionally
 ## stay unavailable so tests can never mint gems without a native ad callback.
-signal reward_completed(gems: int)
+signal reward_completed(kind: String, amount: int)
 signal availability_changed(available: bool)
 
+const REWARD_KIND_GEMS: String = "gems"
+const REWARD_KIND_STAMINA: String = "stamina"
 const REWARD_GEMS: int = GameBalance.AD_GEM_REWARD
+const REWARD_STAMINA: int = GameBalance.STAMINA_AD_REWARD
 const ADMOB_SCRIPT_PATH: String = "res://addons/AdmobPlugin/Admob.gd"
 const ADMOB_CONFIG_PATH: String = "res://addons/AdmobPlugin/ios_export.cfg"
 const RETRY_DELAY_SECONDS: float = 10.0
@@ -16,6 +19,7 @@ var _ad_initialized: bool = false
 var _ad_loading: bool = false
 var _rewarded_ad_id: String = ""
 var _pending_reward: bool = false
+var _pending_kind: String = REWARD_KIND_GEMS
 var _reward_granted: bool = false
 var _last_available: bool = false
 var _retry_timer: Timer
@@ -48,10 +52,11 @@ func is_available() -> bool:
 	)
 
 
-func request_reward() -> bool:
+func request_reward(kind: String = REWARD_KIND_GEMS) -> bool:
 	if not is_available():
 		return false
 	_pending_reward = true
+	_pending_kind = kind if kind in [REWARD_KIND_GEMS, REWARD_KIND_STAMINA] else REWARD_KIND_GEMS
 	_reward_granted = false
 	_admob_node.call("show_rewarded_ad", _rewarded_ad_id)
 	_emit_availability_changed()
@@ -161,7 +166,8 @@ func _on_rewarded_ad_user_earned_reward(_ad_info: Variant, _reward_data: Variant
 	# The native SDK callback is the proof that the user earned the reward. The
 	# amount configured on an AdMob ad unit is deliberately not trusted as the
 	# game's economy value; the game balance remains the single source of truth.
-	reward_completed.emit(REWARD_GEMS)
+	var amount: int = REWARD_STAMINA if _pending_kind == REWARD_KIND_STAMINA else REWARD_GEMS
+	reward_completed.emit(_pending_kind, amount)
 
 
 func _schedule_retry() -> void:

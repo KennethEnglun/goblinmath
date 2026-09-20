@@ -4,6 +4,8 @@ extends RefCounted
 ## Shared visual helpers for the soft, rounded portrait UI.
 const BODY_FONT_PATH: String = "res://assets/fonts/ChironGoRoundTC-500M.woff2"
 const BOLD_FONT_PATH: String = "res://assets/fonts/ChironGoRoundTC-700B.woff2"
+const JA_BODY_FONT_PATH: String = "res://assets/fonts/MPLUSRounded1c-500.ttf"
+const JA_BOLD_FONT_PATH: String = "res://assets/fonts/MPLUSRounded1c-700.ttf"
 # Backwards-compatible alias used by existing checks and callers.
 const CJK_FONT_PATH: String = BODY_FONT_PATH
 const INK: Color = Color("#5c2d2d")
@@ -46,12 +48,34 @@ static func skin_texture(path: String) -> Texture2D:
 
 static func shared_font(role: int = FontRole.BODY) -> Font:
 	var normalized_role: int = FontRole.BOLD if role == FontRole.BOLD else FontRole.BODY
-	if not bool(_font_checked.get(normalized_role, false)):
-		_font_checked[normalized_role] = true
-		var path: String = BOLD_FONT_PATH if normalized_role == FontRole.BOLD else BODY_FONT_PATH
+	var cache_key: String = "%d_%s" % [normalized_role, LanguageManager.get_language()]
+	if not bool(_font_checked.get(cache_key, false)):
+		_font_checked[cache_key] = true
+		var path: String = _font_path_for_role(normalized_role)
 		if ResourceLoader.exists(path):
-			_shared_fonts[normalized_role] = load(path) as Font
-	return _shared_fonts.get(normalized_role) as Font
+			_shared_fonts[cache_key] = load(path) as Font
+	return _shared_fonts.get(cache_key) as Font
+
+static func _font_path_for_role(role: int) -> String:
+	# Japanese needs its own rounded family: the bundled Traditional Chinese
+	# face has no kana coverage. English and Traditional Chinese share it.
+	if LanguageManager.get_language() == LanguageManager.LANGUAGE_JA:
+		return JA_BOLD_FONT_PATH if role == FontRole.BOLD else JA_BODY_FONT_PATH
+	return BOLD_FONT_PATH if role == FontRole.BOLD else BODY_FONT_PATH
+
+static func shared_font_for_language(language: String, role: int = FontRole.BODY) -> Font:
+	# The language picker renders every language name in that language's own
+	# font, so a single CJK face never has to cover glyphs from another script.
+	var normalized_role: int = FontRole.BOLD if role == FontRole.BOLD else FontRole.BODY
+	var cache_key: String = "%d_%s" % [normalized_role, language]
+	if not bool(_font_checked.get(cache_key, false)):
+		_font_checked[cache_key] = true
+		var path: String = BOLD_FONT_PATH if normalized_role == FontRole.BOLD else BODY_FONT_PATH
+		if language == LanguageManager.LANGUAGE_JA:
+			path = JA_BOLD_FONT_PATH if normalized_role == FontRole.BOLD else JA_BODY_FONT_PATH
+		if ResourceLoader.exists(path):
+			_shared_fonts[cache_key] = load(path) as Font
+	return _shared_fonts.get(cache_key) as Font
 
 static func apply_font(control: Control, role: int = FontRole.BODY) -> void:
 	var font: Font = shared_font(role)
@@ -137,6 +161,78 @@ static func make_zh_en_label(chinese: String, english: String, chinese_size: int
 	stack.add_child(zh_label)
 	stack.add_child(en_label)
 	return stack
+
+## Language-aware helpers. In zh_tw mode make_tr_dual reproduces the original
+## zh-first dual layout byte-for-byte; make_tr_en_dual reproduces the battle
+## en-first layout. English and Japanese render a single primary line.
+
+static func make_tr_label(key: String, font_size: int, color: Color = INK, font_role: int = FontRole.BODY) -> Label:
+	return make_label(LanguageManager.t(key), font_size, color, font_role)
+
+static func make_trf_label(key: String, args: Array, font_size: int, color: Color = INK, font_role: int = FontRole.BODY) -> Label:
+	return make_label(LanguageManager.tf(key, args), font_size, color, font_role)
+
+static func make_tr_dual(key: String, primary_size: int = 36, secondary_size: int = 15, color: Color = INK) -> VBoxContainer:
+	var pair: Array = LanguageManager.pair(key)
+	return make_pair_stack(str(pair[0]), str(pair[1]), primary_size, secondary_size, color, true)
+
+static func make_trf_dual(key: String, args: Array, primary_size: int = 36, secondary_size: int = 15, color: Color = INK) -> VBoxContainer:
+	var pair: Array = LanguageManager.pair(key, args)
+	return make_pair_stack(str(pair[0]), str(pair[1]), primary_size, secondary_size, color, true)
+
+static func make_tr_en_dual(key: String, primary_size: int = 40, secondary_size: int = 20, color: Color = INK) -> VBoxContainer:
+	var pair: Array = LanguageManager.pair(key)
+	return make_pair_stack(str(pair[0]), str(pair[1]), primary_size, secondary_size, color, false)
+
+static func make_trf_en_dual(key: String, args: Array, primary_size: int = 40, secondary_size: int = 20, color: Color = INK) -> VBoxContainer:
+	var pair: Array = LanguageManager.pair(key, args)
+	return make_pair_stack(str(pair[0]), str(pair[1]), primary_size, secondary_size, color, false)
+
+static func make_pair_stack(primary: String, secondary: String, primary_size: int, secondary_size: int, color: Color, zh_en_style: bool) -> VBoxContainer:
+	var stack: VBoxContainer = VBoxContainer.new()
+	stack.alignment = BoxContainer.ALIGNMENT_CENTER
+	stack.add_theme_constant_override("separation", -2 if zh_en_style else 0)
+	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var main_label: Label = make_label(primary, primary_size, color, FontRole.BOLD)
+	var small_label: Label = make_label(secondary, secondary_size, color.lightened(0.16 if zh_en_style else 0.12), FontRole.BODY)
+	main_label.name = "PrimaryLabel"
+	small_label.name = "SecondaryLabel"
+	main_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	small_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	small_label.visible = not secondary.is_empty()
+	stack.add_child(main_label)
+	stack.add_child(small_label)
+	return stack
+
+static func make_pair_button(primary: String, secondary: String, background: Color = YELLOW, min_size: Vector2 = Vector2(0, 124)) -> Button:
+	var button: Button = Button.new()
+	button.custom_minimum_size = Vector2(maxf(min_size.x, 96.0), maxf(min_size.y, 96.0))
+	button.focus_mode = Control.FOCUS_NONE
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	button.add_theme_stylebox_override("normal", rounded_style(background, background.darkened(0.18), 34, 5))
+	button.add_theme_stylebox_override("hover", rounded_style(background.lightened(0.08), background.darkened(0.18), 34, 5))
+	button.add_theme_stylebox_override("pressed", rounded_style(background.darkened(0.08), background.darkened(0.2), 34, 5))
+	button.add_theme_stylebox_override("disabled", rounded_style(background.darkened(0.2), background.darkened(0.28), 34, 5))
+	var content: VBoxContainer = make_pair_stack(primary, secondary, 36, 18, INK, false)
+	content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	button.add_child(content)
+	return button
+
+static func make_tr_button(key: String, background: Color = YELLOW, min_size: Vector2 = Vector2(0, 124)) -> Button:
+	var pair: Array = LanguageManager.pair(key)
+	return make_pair_button(str(pair[0]), str(pair[1]), background, min_size)
+
+static func set_tr_button_text(button: Button, key: String, args: Array = []) -> void:
+	if button == null:
+		return
+	var pair: Array = LanguageManager.pair(key, args)
+	var primary_label: Label = button.find_child("PrimaryLabel", true, false) as Label
+	var secondary_label: Label = button.find_child("SecondaryLabel", true, false) as Label
+	if primary_label != null:
+		primary_label.text = str(pair[0])
+	if secondary_label != null:
+		secondary_label.text = str(pair[1])
+		secondary_label.visible = not str(pair[1]).is_empty()
 
 static func make_panel(background: Color = CREAM, border: Color = Color("#f3d88a"), radius: int = 34, border_width: int = 5) -> Panel:
 	var panel: Panel = Panel.new()

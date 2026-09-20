@@ -10,7 +10,9 @@ const SCENE_PATHS: Dictionary = {
 	"map": "res://scenes/map/world_map.tscn",
 	"character": "res://scenes/character/character.tscn",
 	"gacha": "res://scenes/gacha/gacha.tscn",
-	"battle": "res://scenes/battle/battle.tscn"
+	"battle": "res://scenes/battle/battle.tscn",
+	"pvp_lobby": "res://scenes/pvp/pvp_lobby.tscn",
+	"pvp_battle": "res://scenes/pvp/pvp_battle.tscn"
 }
 
 var capture_index: int = 0
@@ -48,6 +50,8 @@ func _run() -> void:
 	await _capture_scene("gacha_result", Vector2i(1080, 1920), "gacha", "result")
 	await _capture_scene("gacha_merge", Vector2i(1080, 1920), "gacha", "merge")
 	await _capture_scene("battle", Vector2i(1080, 1920))
+	await _capture_scene("pvp_lobby", Vector2i(1080, 1920))
+	await _capture_scene("pvp_battle", Vector2i(1080, 1920))
 	await _capture_scene("mobile_start", Vector2i(405, 720), "start")
 	await _capture_scene("mobile_map", Vector2i(405, 720), "map")
 	await _capture_scene("mobile_character", Vector2i(405, 720), "character", "equipment")
@@ -81,6 +85,26 @@ func _run() -> void:
 	await _capture_scene("tall_gacha", COMMON_PHONE_SIZE, "gacha", "summon")
 	await _capture_scene("tall_battle", COMMON_PHONE_SIZE, "battle")
 	await _capture_scene("tall_battle_victory", COMMON_PHONE_SIZE, "battle", "victory")
+	# Localized surfaces: English and Japanese rebuild every screen from the
+	# i18n table, so a compact cross-language pass catches overflow and layout
+	# drift before a release.
+	for language: String in [LanguageManager.LANGUAGE_EN, LanguageManager.LANGUAGE_JA]:
+		LanguageManager.set_language(language)
+		GameManager.player_state = SaveManager.current_data.duplicate(true)
+		await _capture_scene("%s_start" % language, DESIGN_SIZE, "start")
+		await _capture_scene("%s_map" % language, DESIGN_SIZE, "map")
+		await _capture_scene("%s_character" % language, DESIGN_SIZE, "character", "profile")
+		await _capture_scene("%s_character_selector" % language, DESIGN_SIZE, "character", "selector")
+		await _capture_scene("%s_character_bag" % language, DESIGN_SIZE, "character", "bag")
+		await _capture_scene("%s_gacha" % language, DESIGN_SIZE, "gacha", "summon")
+		await _capture_scene("%s_gacha_merge" % language, DESIGN_SIZE, "gacha", "merge")
+		await _capture_scene("%s_battle" % language, DESIGN_SIZE, "battle")
+		await _capture_scene("%s_pvp_lobby" % language, DESIGN_SIZE, "pvp_lobby")
+		await _capture_scene("%s_pvp_battle" % language, DESIGN_SIZE, "pvp_battle")
+		await _capture_scene("%s_battle_victory" % language, DESIGN_SIZE, "battle", "victory")
+		await _capture_scene("%s_battle_defeat" % language, DESIGN_SIZE, "battle", "defeat")
+	LanguageManager.set_language(LanguageManager.LANGUAGE_ZH_TW)
+	GameManager.player_state = SaveManager.current_data.duplicate(true)
 	if visual_viewport != null and is_instance_valid(visual_viewport):
 		visual_viewport.queue_free()
 		await _wait_frames(2)
@@ -201,7 +225,7 @@ func _capture_scene(file_stem: String, viewport_size: Vector2i, scene_key: Strin
 		scene.input_locked = true
 		scene.enemy_attack_timer.stop()
 		scene._set_keypad_disabled(true)
-		scene._show_result_panel(mode == "victory", {"levels_gained": 1, "new_level": 20, "stars": 3, "exp": 12345, "coins": 12345, "gems": 30, "accuracy": 0.99, "mistakes": 1, "chapter_complete": true, "dropped_item": EquipmentSystem.create_instance("rainbow_star_staff", "result_capture", 1, 1)})
+		scene._show_result_panel(mode == "victory", {"levels_gained": 1, "new_level": 20, "stars": 3, "exp": 12345, "coins": 12345, "gems": 30, "accuracy": 0.99, "mistakes": 1, "chapter_complete": true})
 		await _wait_frames(3)
 	# Keep the target live for several additional process frames. Switching a
 	# SubViewport to UPDATE_ONCE while awaiting frame_post_draw can deadlock on

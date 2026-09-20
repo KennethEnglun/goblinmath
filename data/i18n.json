@@ -1,0 +1,1310 @@
+{
+  "common.gems": {
+    "zh": "鑽石",
+    "en": "GEMS",
+    "ja": "ジェム"
+  },
+  "common.coins": {
+    "zh": "金幣",
+    "en": "COINS",
+    "ja": "コイン"
+  },
+  "common.none": {
+    "zh": "無",
+    "en": "NONE",
+    "ja": "なし"
+  },
+  "common.unknown_item": {
+    "zh": "未知裝備",
+    "en": "UNKNOWN ITEM",
+    "ja": "不明な装備"
+  },
+  "common.rarity_common": {
+    "zh": "COMMON 普通",
+    "en": "COMMON",
+    "ja": "コモン"
+  },
+  "common.rarity_uncommon": {
+    "zh": "UNCOMMON 精良",
+    "en": "UNCOMMON",
+    "ja": "アンコモン"
+  },
+  "common.rarity_rare": {
+    "zh": "RARE 稀有",
+    "en": "RARE",
+    "ja": "レア"
+  },
+  "common.rarity_epic": {
+    "zh": "EPIC 史詩",
+    "en": "EPIC",
+    "ja": "エピック"
+  },
+  "common.rarity_legendary": {
+    "zh": "LEGENDARY 傳說",
+    "en": "LEGENDARY",
+    "ja": "レジェンド"
+  },
+  "start.adventure": {
+    "zh": "開始冒險",
+    "en": "START ADVENTURE",
+    "ja": "ぼうけんに出発"
+  },
+  "start.title": {
+    "zh": "哥布林升級中",
+    "en": "GOBLIN LEVELING",
+    "ja": "ゴブリン育成中"
+  },
+  "map.title": {
+    "zh": "冒險地圖",
+    "en": "ADVENTURE MAP",
+    "ja": "ぼうけんマップ"
+  },
+  "map.chapter": {
+    "zh": "第%d章",
+    "en": "CH %d",
+    "ja": "第%d章"
+  },
+  "map.zone.starlight_hill": {
+    "zh": "星光丘",
+    "en": "STARLIGHT HILL",
+    "ja": "星あかりの丘"
+  },
+  "map.zone.sakura_woods": {
+    "zh": "櫻林",
+    "en": "SAKURA WOODS",
+    "ja": "桜林"
+  },
+  "map.zone.flower_meadow": {
+    "zh": "花野",
+    "en": "FLOWER MEADOW",
+    "ja": "花野"
+  },
+  "map.world_name": {
+    "zh": "花漾原野",
+    "en": "FLORAL MEADOW",
+    "ja": "花ゆらめく原野"
+  },
+  "map.world_name_chapter": {
+    "zh": "花漾原野・第%d章",
+    "en": "FLORAL MEADOW CH %d",
+    "ja": "花ゆらめく原野・第%d章"
+  },
+  "map.banner.starlight_hill": {
+    "zh": "星光丘・第%d章",
+    "en": "STARLIGHT HILL・CH %d",
+    "ja": "星あかりの丘・第%d章"
+  },
+  "map.banner.sakura_woods": {
+    "zh": "櫻林・第%d章",
+    "en": "SAKURA WOODS・CH %d",
+    "ja": "桜林・第%d章"
+  },
+  "map.banner.flower_meadow": {
+    "zh": "花野・第%d章",
+    "en": "FLOWER MEADOW・CH %d",
+    "ja": "花野・第%d章"
+  },
+  "map.stage_fallback": {
+    "zh": "第 %d 關",
+    "en": "STAGE %d",
+    "ja": "ステージ %d"
+  },
+  "map.lock": {
+    "zh": "鎖",
+    "en": "LOCK",
+    "ja": "ロック"
+  },
+  "map.prev_chapter": {
+    "zh": "‹",
+    "zh2": "上一章",
+    "en": "‹",
+    "ja": "‹"
+  },
+  "map.next_chapter": {
+    "zh": "›",
+    "zh2": "下一章",
+    "en": "›",
+    "ja": "›"
+  },
+  "map.home": {
+    "zh": "首頁",
+    "zh2": "回到開始",
+    "en": "HOME",
+    "ja": "ホーム"
+  },
+  "map.character": {
+    "zh": "角色",
+    "zh2": "裝備與升級",
+    "en": "HERO",
+    "ja": "キャラクター"
+  },
+  "map.gacha": {
+    "zh": "GACHA",
+    "zh2": "轉蛋",
+    "en": "GACHA",
+    "ja": "ガチャ"
+  },
+  "map.watch_ad": {
+    "zh": "WATCH AD",
+    "zh2": "看廣告 +%d 體力",
+    "en": "WATCH AD",
+    "ja": "広告でスタミナ+%d"
+  },
+  "map.stamina_full": {
+    "zh": "體力 %d/%d\nSTAMINA FULL",
+    "en": "STAMINA %d/%d FULL",
+    "ja": "スタミナ %d/%d まんたん"
+  },
+  "map.stamina_countdown": {
+    "zh": "體力 %d/%d · %02d:%02d 後 +1\nSTAMINA",
+    "en": "STAMINA %d/%d · +1 IN %02d:%02d",
+    "ja": "スタミナ %d/%d・%02d:%02d後に+1"
+  },
+  "map.stats": {
+    "zh": "LV.%d   HP %d   ATK %d   DEF %d   GEMS %d   金幣 %d   進度 %d/%d   星星 %d",
+    "en": "LV.%d   HP %d   ATK %d   DEF %d   GEMS %d   COINS %d   %d/%d   STARS %d",
+    "ja": "Lv.%d　HP %d　ATK %d　DEF %d　GEMS %d　コイン %d　%d/%d　星 %d"
+  },
+  "map.toast_ad_reward": {
+    "zh": "AD REWARD\n體力 +%d！",
+    "en": "AD REWARD\n+%d STAMINA!",
+    "ja": "広告報酬！\nスタミナ+%d"
+  },
+  "map.toast_stamina_full": {
+    "zh": "STAMINA FULL\n體力已經滿了。",
+    "en": "STAMINA FULL",
+    "ja": "スタミナはまんたん"
+  },
+  "map.toast_watch_ad": {
+    "zh": "WATCH AD\n完成廣告後體力 +%d。",
+    "en": "WATCH AD TO\nRECOVER %d STAMINA",
+    "ja": "広告を見ると\nスタミナ+%d"
+  },
+  "map.toast_ad_not_ready": {
+    "zh": "AD NOT READY\n廣告尚未準備好，請稍候再試。",
+    "en": "AD NOT READY\nPLEASE TRY AGAIN SOON",
+    "ja": "広告の準備が\nできていません"
+  },
+  "map.toast_ad_reward_debug": {
+    "zh": "AD REWARD (DEBUG)\n體力 +%d！",
+    "en": "AD REWARD (DEBUG)\n+%d STAMINA!",
+    "ja": "広告報酬(デバッグ)\nスタミナ+%d"
+  },
+  "map.toast_no_stamina": {
+    "zh": "NOT ENOUGH STAMINA\n體力不足！看廣告體力 +%d。",
+    "en": "NOT ENOUGH STAMINA\nWATCH AN AD FOR +%d",
+    "ja": "スタミナ不足！\n広告で+%dもらえるよ"
+  },
+  "battle.pause": {
+    "zh": "Ⅱ",
+    "zh2": "暫停",
+    "en": "Ⅱ",
+    "ja": "Ⅱ"
+  },
+  "battle.stage_badge": {
+    "zh": "第 %d 關",
+    "en": "STAGE %d",
+    "ja": "ステージ %d",
+    "en_first": true
+  },
+  "battle.countdown_paused": {
+    "zh": "PAUSED  ·  暫停中（倒數已停止）",
+    "en": "PAUSED  ·  COUNTDOWN STOPPED",
+    "ja": "ポーズ中・カウント停止"
+  },
+  "battle.countdown_suspended": {
+    "zh": "PAUSED  ·  回來後繼續",
+    "en": "PAUSED  ·  RESUMES LATER",
+    "ja": "ポーズ中・もどったら再開"
+  },
+  "battle.enemy_attacking": {
+    "zh": "ENEMY ATTACK!  ·  敵人攻擊中",
+    "en": "ENEMY ATTACK!",
+    "ja": "てきのこうげき！"
+  },
+  "battle.auto_attack_countdown": {
+    "zh": "AUTO %ds  ·  自動攻擊  -%d HP",
+    "en": "AUTO %ds  ·  -%d HP",
+    "ja": "オート%ds・こうげき -%d HP"
+  },
+  "battle.correct": {
+    "zh": "NICE!\n答對！",
+    "en": "NICE!",
+    "ja": "せいかい！"
+  },
+  "battle.wrong": {
+    "zh": "-%d HP  ·  TRY AGAIN\n答錯了，再試一次",
+    "en": "-%d HP  ·  TRY AGAIN",
+    "ja": "-%d HP・もういちど"
+  },
+  "battle.auto_attack_hit": {
+    "zh": "AUTO ATTACK!\n敵人自動攻擊  -%d HP",
+    "en": "AUTO ATTACK!\n-%d HP",
+    "ja": "オートこうげき！\n-%d HP"
+  },
+  "battle.pause_overlay": {
+    "zh": "暫停中",
+    "en": "PAUSED",
+    "ja": "ポーズ中",
+    "en_first": true
+  },
+  "battle.pause_overlay_hint": {
+    "zh": "敵人倒數已停止\n準備好後再繼續答題",
+    "en": "ENEMY COUNTDOWN STOPPED\nRESUME WHEN READY",
+    "ja": "てきのカウントを止めたよ\nじゅんびができたら再開"
+  },
+  "battle.resume": {
+    "zh": "RESUME",
+    "zh2": "繼續答題",
+    "en": "RESUME",
+    "ja": "さいかい"
+  },
+  "battle.pause_map": {
+    "zh": "MAP",
+    "zh2": "返回地圖",
+    "en": "MAP",
+    "ja": "マップへ"
+  },
+  "battle.combo": {
+    "zh": "%d COMBO  /  連擊",
+    "en": "%d COMBO",
+    "ja": "%d コンボ"
+  },
+  "battle.victory": {
+    "zh": "勝利！",
+    "en": "VICTORY!",
+    "ja": "しょうり！",
+    "en_first": true
+  },
+  "battle.level_up": {
+    "zh": "升級！  LV.%d",
+    "en": "LEVEL UP!  LV.%d",
+    "ja": "レベルアップ！ Lv.%d",
+    "en_first": true
+  },
+  "battle.stage_rating": {
+    "zh": "%s  本關評價",
+    "en": "%s  RATING",
+    "ja": "%s このステージ"
+  },
+  "battle.reward_exp": {
+    "zh": "EXP  +%d",
+    "en": "EXP  +%d",
+    "ja": "けいけんち +%d"
+  },
+  "battle.reward_coins": {
+    "zh": "COINS  +%d",
+    "en": "COINS  +%d",
+    "ja": "コイン +%d"
+  },
+  "battle.reward_gems": {
+    "zh": "+%d GEMS  ·  鑽石",
+    "en": "+%d GEMS",
+    "ja": "ジェム +%d"
+  },
+  "battle.accuracy": {
+    "zh": "ACCURACY %d%%  ·  錯題 %d",
+    "en": "ACCURACY %d%%  ·  MISTAKES %d",
+    "ja": "せいかいりつ %d%%・まちがい %d"
+  },
+  "battle.auto_hits": {
+    "zh": "AUTO HITS %d  ·  自動受擊",
+    "en": "AUTO HITS %d",
+    "ja": "オート被弾 %d"
+  },
+  "battle.replay_reward": {
+    "zh": "REPLAY REWARD 50%  ·  重玩獎勵",
+    "en": "REPLAY REWARD 50%",
+    "ja": "リプレイ報酬 50%"
+  },
+  "battle.world_complete": {
+    "zh": "花漾原野完成！下一章已開放",
+    "en": "FLORAL MEADOW CLEARED! NEXT CHAPTER OPEN",
+    "ja": "花ゆらめく原野クリア！次の章がひらく"
+  },
+  "battle.chapter_complete": {
+    "zh": "第 %d 章完成！下一章已開放",
+    "en": "CHAPTER %d CLEARED! NEXT CHAPTER OPEN",
+    "ja": "第%d章クリア！次の章がひらく"
+  },
+  "battle.stage_unlocked": {
+    "zh": "第 %d 關已解鎖",
+    "en": "STAGE %d UNLOCKED",
+    "ja": "ステージ%dがかいほう"
+  },
+  "battle.stage_done": {
+    "zh": "關卡完成！",
+    "en": "STAGE CLEARED!",
+    "ja": "ステージクリア！"
+  },
+  "battle.continue": {
+    "zh": "CONTINUE",
+    "zh2": "繼續",
+    "en": "CONTINUE",
+    "ja": "つぎへ"
+  },
+  "battle.defeat": {
+    "zh": "再試一次",
+    "en": "TRY AGAIN",
+    "ja": "もういちど",
+    "en_first": true
+  },
+  "battle.defeat_hint": {
+    "zh": "Your HP reached zero.\n生命值歸零了。",
+    "en": "Your HP reached zero.",
+    "ja": "HPがゼロになったよ"
+  },
+  "battle.auto_attacks_hint": {
+    "zh": "AUTO ATTACKS %d  ·  敵人攻擊會隨關卡加快",
+    "en": "AUTO ATTACKS %d  ·  ATTACKS SPEED UP",
+    "ja": "オートこうげき %d回・てきはどんどん速くなる"
+  },
+  "battle.retry": {
+    "zh": "RETRY",
+    "zh2": "消耗 1 體力",
+    "en": "RETRY",
+    "ja": "リトライ"
+  },
+  "battle.retry_needs_stamina": {
+    "zh": "RETRY",
+    "zh2": "需要 1 體力",
+    "en": "NEEDS 1 STAMINA",
+    "ja": "スタミナがたりない"
+  },
+  "battle.defeat_map": {
+    "zh": "MAP",
+    "zh2": "返回地圖",
+    "en": "MAP",
+    "ja": "マップへ"
+  },
+  "char.back": {
+    "zh": "地圖",
+    "zh2": "MAP",
+    "en": "MAP",
+    "ja": "マップ"
+  },
+  "char.title": {
+    "zh": "角色",
+    "en": "CHARACTER",
+    "ja": "キャラクター"
+  },
+  "char.gacha": {
+    "zh": "轉蛋",
+    "zh2": "GACHA",
+    "en": "GACHA",
+    "ja": "ガチャ"
+  },
+  "char.merge": {
+    "zh": "合成",
+    "zh2": "MERGE",
+    "en": "MERGE",
+    "ja": "がったい"
+  },
+  "char.tab_profile": {
+    "zh": "角色",
+    "zh2": "PROFILE",
+    "en": "PROFILE",
+    "ja": "プロフィール"
+  },
+  "char.tab_equipment": {
+    "zh": "裝備",
+    "zh2": "EQUIPMENT",
+    "en": "EQUIPMENT",
+    "ja": "そうび"
+  },
+  "char.tab_bag": {
+    "zh": "背包",
+    "zh2": "BAG",
+    "en": "BAG",
+    "ja": "バッグ"
+  },
+  "char.choose_hero": {
+    "zh": "選擇主角",
+    "en": "CHOOSE YOUR HERO",
+    "ja": "ヒーローえらび"
+  },
+  "char.selector_currency": {
+    "zh": "%d 鑽石\nGEMS",
+    "en": "%d GEMS",
+    "ja": "ジェム %d"
+  },
+  "char.choose_hero_short": {
+    "zh": "CHOOSE HERO",
+    "en": "CHOOSE HERO",
+    "ja": "ヒーローえらび"
+  },
+  "char.choose_hero_selected": {
+    "zh": "選擇主角 · %s",
+    "en": "CHOOSE HERO · %s",
+    "ja": "ヒーローえらび・%s"
+  },
+  "char.equipped_gear": {
+    "zh": "目前裝備",
+    "en": "EQUIPPED GEAR",
+    "ja": "いまのそうび"
+  },
+  "char.open_bag": {
+    "zh": "前往背包",
+    "zh2": "OPEN BAG",
+    "en": "OPEN BAG",
+    "ja": "バッグへ"
+  },
+  "char.inventory_title": {
+    "zh": "裝備清單",
+    "zh2": "INVENTORY",
+    "en": "INVENTORY",
+    "ja": "そうびリスト"
+  },
+  "char.sort": {
+    "zh": "整理",
+    "zh2": "稀有度",
+    "en": "SORT",
+    "ja": "ならべかえ"
+  },
+  "char.close": {
+    "zh": "關閉",
+    "zh2": "CLOSE",
+    "en": "CLOSE",
+    "ja": "とじる"
+  },
+  "char.selector_intro": {
+    "zh": "角色共享等級、配點與裝備；選中的主角會提供專屬能力加成。",
+    "en": "Heroes share level, points, and gear; the selected hero adds a bonus.",
+    "ja": "ヒーローはレベル・ポイント・そうびを共有。えらんだ子のボーナスがつくよ。"
+  },
+  "char.selector_hint": {
+    "zh": "左右滑動查看更多角色  ·  購買後永久解鎖",
+    "en": "SWIPE TO SEE MORE  ·  UNLOCKED FOREVER",
+    "ja": "スワイプでもっと見られる・かうとずっとつかえる"
+  },
+  "char.unlock_hero": {
+    "zh": "確認解鎖",
+    "en": "UNLOCK HERO",
+    "ja": "アンロック"
+  },
+  "char.cancel": {
+    "zh": "取消",
+    "zh2": "CANCEL",
+    "en": "CANCEL",
+    "ja": "キャンセル"
+  },
+  "char.unlock": {
+    "zh": "確認解鎖",
+    "zh2": "UNLOCK",
+    "en": "UNLOCK",
+    "ja": "アンロック"
+  },
+  "char.selected": {
+    "zh": "使用中",
+    "en": "SELECTED",
+    "ja": "つかってる"
+  },
+  "char.owned": {
+    "zh": "已擁有",
+    "en": "OWNED",
+    "ja": "もってる"
+  },
+  "char.price_gems": {
+    "zh": "%d 鑽石",
+    "en": "%d GEMS",
+    "ja": "ジェム%d"
+  },
+  "char.free_test": {
+    "zh": "測試免費 · 0 鑽石",
+    "en": "TEST FREE · 0 GEMS",
+    "ja": "テスト用 むりょう"
+  },
+  "char.free_test_confirm": {
+    "zh": "測試期間免費（0 鑽石）",
+    "en": "FREE DURING TEST",
+    "ja": "テスト期間中は無料"
+  },
+  "char.selected_action": {
+    "zh": "使用中",
+    "zh2": "SELECTED",
+    "en": "SELECTED",
+    "ja": "つかってる"
+  },
+  "char.select": {
+    "zh": "使用角色",
+    "zh2": "SELECT",
+    "en": "SELECT",
+    "ja": "つかう"
+  },
+  "char.unlock_action": {
+    "zh": "購買並使用",
+    "zh2": "UNLOCK",
+    "en": "UNLOCK",
+    "ja": "かってつかう"
+  },
+  "char.no_bonus": {
+    "zh": "無額外加成",
+    "en": "NO BONUS",
+    "ja": "ボーナスなし"
+  },
+  "char.unlock_confirm_text": {
+    "zh": "解鎖「%s」並立即使用？\n費用：%s\n目前持有：%d 鑽石",
+    "en": "Unlock \"%s\" and use now?\nCost: %s\nGems: %d",
+    "ja": "「%s」をアンロックして使う？\n費用：%s\nいま：%dジェム"
+  },
+  "char.toast_selected": {
+    "zh": "已選用 %s",
+    "en": "SELECTED %s",
+    "ja": "%sをつかったよ"
+  },
+  "char.not_enough_gems": {
+    "zh": "鑽石不足",
+    "en": "NOT ENOUGH GEMS",
+    "ja": "ジェムがたりない"
+  },
+  "char.unlock_failed": {
+    "zh": "無法解鎖角色",
+    "en": "UNLOCK FAILED",
+    "ja": "アンロックできない"
+  },
+  "char.unlocked_and_selected": {
+    "zh": "角色已解鎖並選用",
+    "en": "UNLOCKED AND SELECTED",
+    "ja": "アンロックしてせんたくしたよ"
+  },
+  "char.stats_title": {
+    "zh": "能力總覽",
+    "en": "STATS",
+    "ja": "ステータス"
+  },
+  "char.stat_attack": {
+    "zh": "攻擊",
+    "en": "ATK",
+    "ja": "こうげき"
+  },
+  "char.stat_hp": {
+    "zh": "生命",
+    "en": "HP",
+    "ja": "たいりょく"
+  },
+  "char.stat_defense": {
+    "zh": "防禦",
+    "en": "DEF",
+    "ja": "ぼうぎょ"
+  },
+  "char.stat_luck": {
+    "zh": "幸運",
+    "en": "LUCK",
+    "ja": "こううん"
+  },
+  "char.stat_summary": {
+    "zh": "%s %d  ·  %s\n等級 %d  +  加點 %d\n裝備 %d  +  角色 %d",
+    "en": "%s %d\nLEVEL %d + ALLOC %d\nGEAR %d + HERO %d",
+    "ja": "%s %d\nレベル%d＋ふりわけ%d\nそうび%d＋キャラ%d"
+  },
+  "char.bonus_tile": {
+    "zh": "%s +%d\n%s",
+    "en": "%s +%d",
+    "ja": "%s +%d"
+  },
+  "char.points_label": {
+    "zh": "可用 %d 點  ·  累計獲得 %d 點",
+    "en": "%d AVAILABLE  ·  %d TOTAL",
+    "ja": "のこり%d・ぜんぶで%d"
+  },
+  "char.bag_capacity": {
+    "zh": "背包 %d / ∞\nBAG CAPACITY",
+    "en": "BAG %d / ∞",
+    "ja": "バッグ %d / ∞"
+  },
+  "char.currency": {
+    "zh": "%s  鑽石\n%s  金幣",
+    "en": "%s  GEMS\n%s  COINS",
+    "ja": "%s  ジェム\n%s  コイン"
+  },
+  "char.stat_points_title": {
+    "zh": "能力配點",
+    "en": "STAT POINTS",
+    "ja": "ポイントふりわけ"
+  },
+  "char.stat_button_attack": {
+    "zh": "攻擊 %d",
+    "zh2": "ATK · +1",
+    "en": "ATK %d  ·  +1",
+    "ja": "こうげき %d"
+  },
+  "char.stat_button_hp": {
+    "zh": "生命 %d",
+    "zh2": "MAX HP · +3",
+    "en": "MAX HP %d  ·  +3",
+    "ja": "たいりょく %d"
+  },
+  "char.stat_button_defense": {
+    "zh": "防禦 %d",
+    "zh2": "DEF · +1",
+    "en": "DEF %d  ·  +1",
+    "ja": "ぼうぎょ %d"
+  },
+  "char.stat_button_luck": {
+    "zh": "幸運 %d",
+    "zh2": "LUCK · +1",
+    "en": "LUCK %d  ·  +1",
+    "ja": "こううん %d"
+  },
+  "char.equipment_bonus_title": {
+    "zh": "裝備加成",
+    "en": "EQUIPMENT BONUS",
+    "ja": "そうびボーナス"
+  },
+  "char.equipment_bonus_applied": {
+    "zh": "目前套用：%s",
+    "en": "APPLIED: %s",
+    "ja": "いまのこうか：%s"
+  },
+  "char.slot_weapon": {
+    "zh": "武器",
+    "en": "WEAPON",
+    "ja": "ぶき"
+  },
+  "char.slot_head": {
+    "zh": "頭部",
+    "en": "HEAD",
+    "ja": "あたま"
+  },
+  "char.slot_body": {
+    "zh": "身體",
+    "en": "BODY",
+    "ja": "からだ"
+  },
+  "char.slot_empty": {
+    "zh": "未裝備\nEMPTY",
+    "en": "EMPTY",
+    "ja": "そうびなし"
+  },
+  "char.unequip": {
+    "zh": "卸下",
+    "zh2": "UNEQUIP",
+    "en": "UNEQUIP",
+    "ja": "はずす"
+  },
+  "char.empty_bag": {
+    "zh": "尚未取得裝備",
+    "en": "EMPTY BAG",
+    "ja": "まだなにもない"
+  },
+  "char.empty_bag_hint": {
+    "zh": "去轉蛋頁抽裝備吧！",
+    "en": "GEAR COMES ONLY FROM GACHA PULLS!",
+    "ja": "そうびはガチャでゲットしよう！"
+  },
+  "char.equipped_badge": {
+    "zh": "已裝備  ·  EQUIPPED",
+    "en": "EQUIPPED",
+    "ja": "そうびちゅう"
+  },
+  "char.equipped": {
+    "zh": "已穿戴",
+    "zh2": "EQUIPPED",
+    "en": "EQUIPPED",
+    "ja": "そうびちゅう"
+  },
+  "char.equip": {
+    "zh": "穿戴",
+    "zh2": "EQUIP",
+    "en": "EQUIP",
+    "ja": "そうび"
+  },
+  "char.upgrade": {
+    "zh": "強化 · %d 金幣\nUPGRADE",
+    "en": "UPGRADE · %d COINS",
+    "ja": "きょうか・%dコイン"
+  },
+  "char.sell": {
+    "zh": "出售 +%d\nSELL",
+    "en": "SELL +%d",
+    "ja": "うる +%d"
+  },
+  "char.sell_confirm": {
+    "zh": "確認出售 +%d\nCONFIRM",
+    "en": "CONFIRM SELL +%d",
+    "ja": "うっていい？ +%d"
+  },
+  "char.toast_stat_up": {
+    "zh": "STAT UP!\n能力提升！",
+    "en": "STAT UP!",
+    "ja": "ステータスアップ！"
+  },
+  "char.toast_no_points": {
+    "zh": "NO POINTS\n升級後會獲得可分配屬性點。",
+    "en": "NO POINTS\nLEVEL UP FOR MORE",
+    "ja": "ポイントがないよ"
+  },
+  "char.toast_equipped": {
+    "zh": "EQUIPPED!\n已穿戴裝備。",
+    "en": "EQUIPPED!",
+    "ja": "そうびしたよ！"
+  },
+  "char.toast_cannot_equip": {
+    "zh": "CANNOT EQUIP\n無法穿戴這件裝備。",
+    "en": "CANNOT EQUIP",
+    "ja": "そうびできない"
+  },
+  "char.toast_unequipped": {
+    "zh": "UNEQUIPPED\n已卸下裝備。",
+    "en": "UNEQUIPPED",
+    "ja": "はずしたよ"
+  },
+  "char.toast_empty_slot": {
+    "zh": "EMPTY SLOT\n這個槽位沒有裝備。",
+    "en": "EMPTY SLOT",
+    "ja": "なにもそうびしていない"
+  },
+  "char.toast_upgrade_success": {
+    "zh": "UPGRADE SUCCESS\n強化成功！",
+    "en": "UPGRADE SUCCESS!",
+    "ja": "きょうかせいこう！"
+  },
+  "char.toast_not_enough_coins": {
+    "zh": "NOT ENOUGH COINS\n金幣不足，繼續冒險吧。",
+    "en": "NOT ENOUGH COINS",
+    "ja": "コインがたりないよ"
+  },
+  "char.toast_confirm_sell": {
+    "zh": "CONFIRM SELL\n再次按「確認出售」才會賣出這件裝備。",
+    "en": "PRESS CONFIRM AGAIN TO SELL",
+    "ja": "もういちどおすとうるよ"
+  },
+  "char.toast_sold": {
+    "zh": "SOLD\n已出售裝備，獲得 %d 金幣。",
+    "en": "SOLD  +%d COINS",
+    "ja": "うったよ！コイン+%d"
+  },
+  "char.toast_equipped_cannot_sell": {
+    "zh": "EQUIPPED ITEM\n穿戴中的裝備不能出售。",
+    "en": "EQUIPPED ITEMS CANNOT BE SOLD",
+    "ja": "そうびちゅうはうれない"
+  },
+  "char.toast_sorted": {
+    "zh": "SORTED\n背包已依%s整理。",
+    "en": "SORTED BY %s",
+    "ja": "%sでならべたよ"
+  },
+  "char.sort_rarity": {
+    "zh": "稀有度",
+    "en": "RARITY",
+    "ja": "レア度"
+  },
+  "char.sort_slot": {
+    "zh": "部位",
+    "en": "SLOT",
+    "ja": "ぶい"
+  },
+  "char.sort_level": {
+    "zh": "等級",
+    "en": "LEVEL",
+    "ja": "レベル"
+  },
+  "char.level_label": {
+    "zh": "等級 %d  ·  第 %d 章",
+    "en": "LV.%d  ·  CH %d",
+    "ja": "レベル%d・第%d章"
+  },
+  "char.exp_label": {
+    "zh": "經驗值 %d / %d  ·  EXP",
+    "en": "EXP %d / %d",
+    "ja": "けいけんち %d / %d"
+  },
+  "char.stat_breakdown_title": {
+    "zh": "能力總值 / 分拆",
+    "en": "TOTAL / BREAKDOWN",
+    "ja": "ステータスないわけ"
+  },
+  "char.stat_breakdown_line": {
+    "zh": "%s %d（等級 %d + 加點 %d + 裝備 %d + 角色 %d）",
+    "en": "%s %d (LEVEL %d + ALLOC %d + GEAR %d + HERO %d)",
+    "ja": "%s %d（レベル%d＋ふりわけ%d＋そうび%d＋キャラ%d）"
+  },
+  "gacha.back": {
+    "zh": "MAP",
+    "zh2": "地圖",
+    "en": "MAP",
+    "ja": "マップ"
+  },
+  "gacha.title": {
+    "zh": "GACHA",
+    "zh2": "轉蛋",
+    "en": "GACHA",
+    "ja": "ガチャ"
+  },
+  "gacha.title_secondary": {
+    "zh": "轉蛋",
+    "en": "GACHA",
+    "ja": "ガチャ"
+  },
+  "gacha.title_merge": {
+    "zh": "MERGE",
+    "en": "MERGE",
+    "ja": "がったい"
+  },
+  "gacha.title_merge_secondary": {
+    "zh": "合成",
+    "en": "MERGE",
+    "ja": "がったい"
+  },
+  "gacha.tab_summon": {
+    "zh": "SUMMON",
+    "zh2": "抽裝備",
+    "en": "SUMMON",
+    "ja": "ガチャ"
+  },
+  "gacha.tab_merge": {
+    "zh": "MERGE",
+    "zh2": "三件合成",
+    "en": "MERGE",
+    "ja": "3つがったい"
+  },
+  "gacha.summon_title": {
+    "zh": "抽取可用裝備",
+    "en": "EQUIPMENT SUMMON",
+    "ja": "そうびガチャ",
+    "en_first": true
+  },
+  "gacha.merge_title": {
+    "zh": "裝備合成",
+    "en": "EQUIPMENT MERGE",
+    "ja": "そうびがったい",
+    "en_first": true
+  },
+  "gacha.watch_ad": {
+    "zh": "WATCH AD",
+    "zh2": "觀看廣告 +%d\n%s",
+    "en": "WATCH AD",
+    "ja": "広告でジェム"
+  },
+  "gacha.ad_ready": {
+    "zh": "可觀看",
+    "en": "READY",
+    "ja": "みられる"
+  },
+  "gacha.ad_loading": {
+    "zh": "廣告載入中",
+    "en": "LOADING",
+    "ja": "よみこみちゅう"
+  },
+  "gacha.ad_not_open": {
+    "zh": "廣告功能尚未開放",
+    "en": "ADS UNAVAILABLE",
+    "ja": "広告はまだ"
+  },
+  "gacha.merge_count": {
+    "zh": "合成 %d / 3",
+    "en": "MERGE %d / 3",
+    "ja": "がったい %d/3"
+  },
+  "gacha.auto_merge": {
+    "zh": "AUTO MERGE",
+    "zh2": "自動合成",
+    "en": "AUTO MERGE",
+    "ja": "ぜんぶがったい"
+  },
+  "gacha.help": {
+    "zh": "相同裝備三件可合成；強化金幣會退還。\n自動合成可先預覽，已裝備物品也可使用。",
+    "en": "Merge 3 of the same item; upgrade coins are refunded.\nAuto merge shows a preview; equipped items can be used.",
+    "ja": "同じそうび3つでがったい。きょうかコインはかえってくるよ。\nプレビューを見てからぜんぶがったいできる。"
+  },
+  "gacha.result_title": {
+    "zh": "轉蛋結果",
+    "en": "SUMMON RESULT",
+    "ja": "ガチャけっか",
+    "en_first": true
+  },
+  "gacha.close_result": {
+    "zh": "CLOSE",
+    "zh2": "關閉結果",
+    "en": "CLOSE",
+    "ja": "とじる"
+  },
+  "gacha.auto_merge_preview_title": {
+    "zh": "自動合成預覽",
+    "en": "AUTO MERGE PREVIEW",
+    "ja": "がったいプレビュー",
+    "en_first": true
+  },
+  "gacha.cancel": {
+    "zh": "CANCEL",
+    "zh2": "取消",
+    "en": "CANCEL",
+    "ja": "キャンセル"
+  },
+  "gacha.confirm_auto_merge": {
+    "zh": "CONFIRM",
+    "zh2": "確認自動合成",
+    "en": "CONFIRM",
+    "ja": "がったいする"
+  },
+  "gacha.gem_badge": {
+    "zh": "%s\n鑽石",
+    "en": "%s\nGEMS",
+    "ja": "%s\nジェム"
+  },
+  "gacha.highest_stage": {
+    "zh": "最高完成 Stage %d",
+    "en": "HIGHEST STAGE %d",
+    "ja": "さいこうステージ%d"
+  },
+  "gacha.available_summary": {
+    "zh": "目前可抽取：%s\n%s",
+    "en": "AVAILABLE: %s\n%s",
+    "ja": "いまひける：%s\n%s"
+  },
+  "gacha.pool_notes": {
+    "zh": "機率會依已解鎖稀有度重新計算。\n十連抽在有更高階池時保證至少一件 Uncommon 以上。",
+    "en": "Rates update with unlocked rarities.\n10-pull guarantees Uncommon+ when available.",
+    "ja": "確率はアンロックしたレア度でかわるよ。\n10連はアンコモン以上が1つ保証。"
+  },
+  "gacha.materials_selected": {
+    "zh": "MATERIALS %d / 3\n選擇三件相同模板的裝備（已裝備物品也可使用）",
+    "en": "MATERIALS %d / 3\nPICK 3 OF THE SAME ITEM (EQUIPPED OK)",
+    "ja": "材料 %d/3\n同じものを3つえらんでね"
+  },
+  "gacha.empty_materials": {
+    "zh": "EMPTY MATERIALS\n尚未有可合成的裝備。",
+    "en": "NO MERGEABLE ITEMS",
+    "ja": "がったいできるそうびがない"
+  },
+  "gacha.auto_merge_count": {
+    "zh": "自動合成 %d 組",
+    "en": "AUTO MERGE %d",
+    "ja": "がったい%d組"
+  },
+  "gacha.item_count": {
+    "zh": "(%d 件)",
+    "en": "(%d)",
+    "ja": "（%dこ）"
+  },
+  "gacha.material_level": {
+    "zh": "Lv.%d",
+    "en": "Lv.%d",
+    "ja": "Lv.%d"
+  },
+  "gacha.material_equipped": {
+    "zh": "Lv.%d\n已裝備",
+    "en": "Lv.%d\nEQUIPPED",
+    "ja": "Lv.%d\nそうびちゅう"
+  },
+  "gacha.toast_selected_full": {
+    "zh": "SELECTED 3 / 3\n已經選滿三件。",
+    "en": "SELECTED 3 / 3",
+    "ja": "3つえらんだよ"
+  },
+  "gacha.toast_same_item_only": {
+    "zh": "SAME ITEM ONLY\n合成必須選擇相同模板。",
+    "en": "SAME ITEM ONLY",
+    "ja": "おなじものだけえらんでね"
+  },
+  "gacha.toast_ad_not_ready": {
+    "zh": "AD NOT READY\n廣告尚未準備好，請稍候再試。",
+    "en": "AD NOT READY\nTRY AGAIN SOON",
+    "ja": "広告の準備ができていない"
+  },
+  "gacha.toast_watch_ad": {
+    "zh": "WATCH AD\n完成廣告後獲得 %d 鑽石。",
+    "en": "WATCH AD FOR %d GEMS",
+    "ja": "広告を見るとジェム+%d"
+  },
+  "gacha.free": {
+    "zh": "免費 FREE",
+    "en": "FREE",
+    "ja": "むりょう"
+  },
+  "gacha.cost_gems": {
+    "zh": "%d 鑽石",
+    "en": "%d GEMS",
+    "ja": "ジェム%d"
+  },
+  "gacha.toast_need_three": {
+    "zh": "NEED THREE ITEMS\n請選擇三件有效材料。",
+    "en": "NEED THREE MATERIALS",
+    "ja": "材料が3つひつよう"
+  },
+  "gacha.toast_merge_success": {
+    "zh": "MERGE SUCCESS\n合成了 %s！\n退還 %d 金幣。",
+    "en": "MERGED %s!\nREFUND %d COINS",
+    "ja": "がったいできた！%s\nコイン+%d"
+  },
+  "gacha.toast_no_mergeable": {
+    "zh": "NO MERGEABLE ITEMS\n目前沒有可自動合成的裝備。",
+    "en": "NOTHING TO AUTO MERGE",
+    "ja": "がったいできるものがない"
+  },
+  "gacha.equipped_slot_replaced": {
+    "zh": " · 裝備部位會替換",
+    "en": " · SLOT REPLACED",
+    "ja": "・そうびがおきかわる"
+  },
+  "gacha.auto_merge_step": {
+    "zh": "第%d組　%s × 3  →  %s%s",
+    "en": "%d. %s × 3  →  %s%s",
+    "ja": "%d組目　%s × 3  →  %s%s"
+  },
+  "gacha.auto_merge_outputs": {
+    "zh": "最終產出",
+    "en": "OUTPUT",
+    "ja": "けっか"
+  },
+  "gacha.auto_merge_output_line": {
+    "zh": "・%s Lv.1",
+    "en": "%s Lv.1",
+    "ja": "・%s Lv.1"
+  },
+  "gacha.auto_equipped": {
+    "zh": "（自動裝備）",
+    "en": " (AUTO EQUIPPED)",
+    "ja": "（じどうそうび）"
+  },
+  "gacha.auto_merge_summary": {
+    "zh": "共 %d 組合成 · 消耗 %d 件 · 最終產出 %d 件\n退還 %d 金幣\n已裝備部位將自動換上新產物：%s",
+    "en": "%d MERGES · %d USED · %d NEW\nREFUND %d COINS\nEQUIPPED SLOTS GET NEW ITEMS: %s",
+    "ja": "%d組がったい・つかった%d・あたらしい%d\nコイン%d返金\nそうびはあたらしいものにおきかえ：%s"
+  },
+  "gacha.toast_auto_merge_success": {
+    "zh": "AUTO MERGE SUCCESS\n完成 %d 組合成！\n消耗 %d 件，退還 %d 金幣。",
+    "en": "AUTO MERGED %d!\nUSED %d, REFUND %d COINS",
+    "ja": "%d組がったい！\nコイン%d返金"
+  },
+  "gacha.result_info": {
+    "zh": "%s\n剩餘鑽石 %d",
+    "en": "%s\nGEMS LEFT %d",
+    "ja": "%s\nのこりジェム %d"
+  },
+  "gacha.guaranteed": {
+    "zh": "十連保底已生效",
+    "en": "10-PULL GUARANTEE",
+    "ja": "10連保証"
+  },
+  "gacha.pull_done": {
+    "zh": "抽取完成",
+    "en": "SUMMON DONE",
+    "ja": "ガチャかんりょう"
+  },
+  "gacha.result_item_name": {
+    "zh": "%s  Lv.1",
+    "en": "%s  Lv.1",
+    "ja": "%s  Lv.1"
+  },
+  "gacha.toast_ad_reward": {
+    "zh": "AD REWARD\n獲得 %d 鑽石！",
+    "en": "AD REWARD\n+%d GEMS!",
+    "ja": "広告報酬！\nジェム+%d"
+  },
+  "gacha.reason_not_enough_gems": {
+    "zh": "NOT ENOUGH GEMS\n鑽石不足。",
+    "en": "NOT ENOUGH GEMS",
+    "ja": "ジェムがたりない"
+  },
+  "gacha.reason_pool_locked": {
+    "zh": "POOL LOCKED\n目前沒有可抽取的裝備。",
+    "en": "NO EQUIPMENT TO SUMMON",
+    "ja": "ひけるそうびがない"
+  },
+  "gacha.reason_need_three": {
+    "zh": "NEED THREE ITEMS\n需要三件材料。",
+    "en": "NEED THREE MATERIALS",
+    "ja": "材料が3つひつよう"
+  },
+  "gacha.reason_invalid_level": {
+    "zh": "INVALID LEVEL\n裝備等級無效。",
+    "en": "INVALID LEVEL",
+    "ja": "レベルが不正"
+  },
+  "gacha.reason_equipped_item": {
+    "zh": "EQUIPPED ITEM\n已裝備物品可以作為合成材料。",
+    "en": "EQUIPPED ITEMS CAN BE USED",
+    "ja": "そうびちゅうも材料にできるよ"
+  },
+  "gacha.reason_same_item_only": {
+    "zh": "SAME ITEM ONLY\n請選擇相同模板。",
+    "en": "SAME TEMPLATE ONLY",
+    "ja": "おなじものだけ"
+  },
+  "gacha.reason_same_rarity": {
+    "zh": "SAME RARITY ONLY\n請選擇相同稀有度。",
+    "en": "SAME RARITY ONLY",
+    "ja": "おなじレア度だけ"
+  },
+  "gacha.reason_max_rarity": {
+    "zh": "MAX RARITY\n這件裝備已經是最高階。",
+    "en": "ALREADY MAX RARITY",
+    "ja": "もうさいこうだよ"
+  },
+  "gacha.reason_generic": {
+    "zh": "TRY AGAIN\n操作未完成。",
+    "en": "TRY AGAIN",
+    "ja": "もういちど"
+  },
+  "gacha.ad_tooltip_ready": {
+    "zh": "觀看完整廣告後獲得鑽石",
+    "en": "WATCH A FULL AD FOR GEMS",
+    "ja": "広告を見るとジェムがもらえる"
+  },
+  "gacha.ad_tooltip_loading": {
+    "zh": "廣告正在載入，請稍候",
+    "en": "AD LOADING",
+    "ja": "広告をよみこみちゅう"
+  },
+  "pvp.default_name": {
+    "zh": "玩家%d",
+    "en": "Player %d",
+    "ja": "プレイヤー%d"
+  },
+  "pvp.title": {
+    "zh": "對戰場",
+    "en": "Battle Arena",
+    "ja": "バトルアリーナ"
+  },
+  "pvp.battle_title": {
+    "zh": "對戰中",
+    "en": "Battling",
+    "ja": "たいせんちゅう"
+  },
+  "pvp.entry": {
+    "zh": "玩家對戰",
+    "en": "PvP Battle",
+    "ja": "たいせん"
+  },
+  "pvp.connecting": {
+    "zh": "連線中...",
+    "en": "Connecting...",
+    "ja": "せつぞくちゅう..."
+  },
+  "pvp.connected": {
+    "zh": "已連線",
+    "en": "Connected",
+    "ja": "せつぞくずみ"
+  },
+  "pvp.queued": {
+    "zh": "配對中...",
+    "en": "Finding an opponent...",
+    "ja": "マッチングちゅう..."
+  },
+  "pvp.room_waiting": {
+    "zh": "開好了，等玩家加入...",
+    "en": "Waiting for a friend...",
+    "ja": "ともだちを まっています..."
+  },
+  "pvp.your_room": {
+    "zh": "專屬通關號：%s",
+    "en": "Room code: %s",
+    "ja": "部屋コード：%s"
+  },
+  "pvp.nickname": {
+    "zh": "玩家號",
+    "en": "Nickname",
+    "ja": "ニックネーム"
+  },
+  "pvp.quick_match": {
+    "zh": "快速配對",
+    "en": "Quick Match",
+    "ja": "かんたんマッチ"
+  },
+  "pvp.create_room": {
+    "zh": "開一場",
+    "en": "Create Room",
+    "ja": "部屋をつくる"
+  },
+  "pvp.join": {
+    "zh": "加入",
+    "en": "Join Room",
+    "ja": "部屋に参加"
+  },
+  "pvp.room_code_hint": {
+    "zh": "通關號",
+    "en": "Code",
+    "ja": "コード"
+  },
+  "pvp.cancel": {
+    "zh": "取消",
+    "en": "Cancel",
+    "ja": "やめる"
+  },
+  "pvp.stamina_cost": {
+    "zh": "每次對戰消耗 %d 體力",
+    "en": "Each battle uses %d stamina",
+    "ja": "たいせんで %dスタミナ つかうよ"
+  },
+  "pvp.correct": {
+    "zh": "答對了！攻擊！",
+    "en": "Correct! Attack!",
+    "ja": "せいかい！こうげき！"
+  },
+  "pvp.wrong": {
+    "zh": "答錯了，小心！",
+    "en": "Oops, careful!",
+    "ja": "ざんねん！ちゅうい！"
+  },
+  "pvp.victory": {
+    "zh": "勝利！",
+    "en": "Victory!",
+    "ja": "しょうり！"
+  },
+  "pvp.defeat": {
+    "zh": "輸了...",
+    "en": "You lost...",
+    "ja": "まけた..."
+  },
+  "pvp.draw": {
+    "zh": "平手！",
+    "en": "Draw!",
+    "ja": "ひきわけ！"
+  },
+  "pvp.reward": {
+    "zh": "獲得 %d 金幣",
+    "en": "Earned %d coins",
+    "ja": "%dコイン ゲット！"
+  },
+  "pvp.combo": {
+    "zh": "%d 連擊",
+    "en": "Combo %d",
+    "ja": "%dコンボ"
+  },
+  "pvp.opp_reconnecting": {
+    "zh": "對手重連中（%d 秒）...",
+    "en": "Opponent reconnecting (%d s)...",
+    "ja": "あいてが さいせつぞくちゅう（%dびょう）..."
+  },
+  "pvp.self_reconnecting": {
+    "zh": "連線中斷，重新連接中...",
+    "en": "Connection lost, reconnecting...",
+    "ja": "せつぞくが きれて さいせつぞくちゅう..."
+  },
+  "pvp.back_lobby": {
+    "zh": "離開",
+    "en": "Back to Lobby",
+    "ja": "ロビーへもどる"
+  },
+  "pvp.no_match": {
+    "zh": "目前沒有對戰",
+    "en": "No active match",
+    "ja": "たいせんなし"
+  },
+  "pvp.error_server_unreachable": {
+    "zh": "連不上主機",
+    "en": "Can't reach the server",
+    "ja": "サーバーに つながらないよ"
+  },
+  "pvp.error_invalid_room": {
+    "zh": "通關號錯了",
+    "en": "Invalid room code",
+    "ja": "部屋コードが ちがうよ"
+  },
+  "pvp.error_room_expired": {
+    "zh": "通關號過期了",
+    "en": "The room expired",
+    "ja": "部屋の じかんが きれたよ"
+  },
+  "pvp.error_not_enough_stamina": {
+    "zh": "體力不足！",
+    "en": "Not enough stamina!",
+    "ja": "スタミナが たりない！"
+  },
+  "pvp.error_disconnected": {
+    "zh": "連線中斷",
+    "en": "Disconnected",
+    "ja": "せつぞくが きれたよ"
+  }
+}

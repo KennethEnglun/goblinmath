@@ -26,6 +26,10 @@ const ENDLESS_STAGE_NAMES: Array[String] = [
 	"晨露入口", "蒲公英小徑", "蜜桃溪畔", "櫻風入口", "莓果樹洞",
 	"花瓣練習場", "雲朵岔路", "月芽坡", "星光山徑", "星冠試煉"
 ]
+const ENDLESS_STAGE_NAMES_JA: Array[String] = [
+	"朝露の入口", "たんぽぽの小道", "ももの小川", "桜風の入口", "ベリーの樹洞",
+	"花びらの練習場", "雲の分かれ道", "三日月の坂", "星あかりの山道", "星冠の試練"
+]
 
 var stages: Dictionary = {}
 var monsters: Dictionary = {}
@@ -116,6 +120,9 @@ func get_all_characters() -> Array:
 func is_character_test_price_enabled() -> bool:
 	return bool(character_config.get("test_price_enabled", false))
 
+func is_gacha_test_cost_enabled() -> bool:
+	return bool(gacha_config.get("test_cost_enabled", false))
+
 func _generate_endless_stage(stage_id: int) -> Dictionary:
 	var chapter: int = GameBalance.chapter_for_stage(stage_id)
 	var slot: int = GameBalance.slot_for_stage(stage_id)
@@ -135,6 +142,7 @@ func _generate_endless_stage(stage_id: int) -> Dictionary:
 		"zone": zone,
 		"name": "Chapter %d Stage %d" % [chapter, slot],
 		"name_zh": "第%d章・%s" % [chapter, ENDLESS_STAGE_NAMES[slot - 1]],
+		"name_ja": "第%d章・%s" % [chapter, ENDLESS_STAGE_NAMES_JA[slot - 1]],
 		"question_types": question_types,
 		"min_number": 1,
 		"max_number": addition_max,

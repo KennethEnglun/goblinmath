@@ -72,3 +72,42 @@ Original prompt: 完整做一次所有按鈕的入口通道要正確，文字與
 - 2026-08-11: 角色展示圖下移以避開加高分頁；macOS OpenGL renderer 已重新確認 PROFILE、EQUIPMENT、BAG 與 405×720 手機畫面，並再次通過 `LONG_TERM_SYSTEMS_TESTS_PASS`、`RUNTIME_FLOW_TESTS_PASS`。
 - 2026-08-16: 依轉蛋頁最新視覺需求，將左上 MAP 按鈕高度調整為 160、1 抽／10 抽／Watch Ad 按鈕高度調整為 176，並將 Watch Ad 鎖頭圖垂直置中；補上 runtime 尺寸回歸檢查，未改動抽卡、廣告或返回邏輯。
 - 2026-08-16: 完成轉蛋頁視覺回歸；1080×1920 與 405×720 截圖確認 MAP／地圖及三個抽卡按鈕文字完整落在 logo 內，鎖頭置中且沒有版面裁切。`RUNTIME_FLOW_TESTS_PASS` 與 `LONG_TERM_SYSTEMS_TESTS_PASS` 均通過。
+
+## Systems batch — 2026-09-17
+
+- 選擇主角彈窗水平滑動修正：`character.gd` 的 `_input` 改為依 `_get_active_scroll()` 分流，選擇器開啟時拖曳導向 `CharacterCardScroll`（新增水平軸拖曳，HScrollBar `max_value - page` clamp，12px 門檻保留），購買確認彈窗開啟時不捲動。runtime 新增真實 touch drag 水平捲動回歸。
+- 體力制度上線：上限 20、每關消耗 1（戰敗 RETRY 同樣消耗，不足時按鈕 disabled、可返回地圖）、每 10 分鐘回 1 點（存檔欄位 `stamina`／`stamina_updated_at`，`GameBalance.apply_stamina_regen` 統一離線結算與倒數數學；`updated_at=0` 視為無時間戳、不發離線補貼）、看廣告回 5 點（`RewardedAdService.request_reward(kind)` 支援 gems/stamina，signal 改為 `reward_completed(kind, amount)`；debug build 無廣告 SDK 時直接發放）。地圖底部新列顯示 `體力 X/20 · MM:SS 後 +1` + WATCH AD 按鈕（1 秒刷新），體力不足點關卡顯示 toast 並阻擋。
+- 取消戰鬥掉落：`apply_victory` 移除 `_roll_and_store_drop`／`dropped_item`／`auto_salvage_coins`，刪除 `EquipmentSystem.roll_drop`／`starter_item`／`loot_pity`；新存檔改為空背包（無初始武器），既有存檔不受影響；勝利畫面移除 DROP 列；空背包文案改為引導轉蛋。合成／強化／出售／穿戴保留（素材僅來自轉蛋）。
+- 抽裝備 0 鑽測試：`gacha.json` 新增 `test_cost_enabled/test_single_cost/test_ten_cost`（同角色測試價模式）；`GachaSystem.pull_cost` 回傳有效價、`roll` 允許 0 元免費抽（跳過鑽石檢查）；轉蛋按鈕顯示「免費 FREE」且不因鑽石不足 disabled；恢復正式價格只需將 flag 改 false。
+- 測試同步：vertical_slice 更新（新存檔空背包、掉落移除、0 鑽抽卡、體力單元數學／門檻／廣告回復），runtime_flow 新增 `_test_stamina_gate`（地圖體力 HUD、0 體力阻擋＋toast、debug 廣告 +5）與選擇器水平拖曳、免費抽不扣鑽檢查；`visual_capture` 移除 `dropped_item`。`LONG_TERM_SYSTEMS_TESTS_PASS`、`RUNTIME_FLOW_TESTS_PASS`（兩次）、OpenGL 視覺擷取 42/42 並目視地圖體力列、選擇器、轉蛋免費標示。
+
+## iOS Xcode project — 2026-09-17
+
+- 原本 repo 沒有 Xcode 專案；以 `iOS Xcode` preset（export_project_only）生成 `build/ios/GoblinLeveling.xcodeproj`（build/ 已 gitignore，可隨時重新匯出）。
+- 修復三項匯出阻擋：① `export_presets.cfg` 填入本機憑證對應的 App Store Team ID `8YJDJ64XYS`；② 啟用 `rendering/textures/vram_compression/import_etc2_astc=true`（Godot 4.6.3 iOS 匯出在 macOS 上必備，否則 CLI 只回報空白 configuration errors）；③ 以 PIL 生成 1024×1024 App icon `assets/ui/start/app_icon_v1.png`（哥布林素材＋app 粉彩漸層）並設定 `config/icon`。
+- AdMob：`ios_export.cfg` is_real=true，Release App ID 已嵌入 Info.plist；無 mediation 故略過 Podfile。
+- 驗證：`xcodebuild -sdk iphoneos CODE_SIGNING_ALLOWED=NO`（arm64 真機）與 `-sdk iphonesimulator ARCHS=x86_64` 均 BUILD SUCCEEDED。注意：官方 Godot 4.6.3 ios.zip 的模擬器切片只含 x86_64 objects（Info.plist 卻宣告 arm64），Apple Silicon 模擬器需以 x86_64/Rosetta 跑或直接真機測試；真機簽名需在 Xcode 選團隊（DEVELOPMENT_TEAM 已寫入）。
+- 頭less 兩套測試在 icon／etc2_astc 變更後重跑仍通過。
+- 2026-09-17：修正 Xcode「conflicting provisioning settings」— `export_presets.cfg` 將 debug／release code sign identity 明確設為 `Apple Development`（原本留空時 release 會被 Godot 預設成 `Apple Distribution`，與自動簽名衝突）；重新匯出後 device build 仍 BUILD SUCCEEDED。
+
+## 三語國際化（繁中／英文／日文）— 2026-09-17
+
+- 新增 `LanguageManager` autoload（語言碼 zh_tw/en/ja，存進 save.json `language` 欄位，normalize 驗證；`t(key)`／`tf(key, args)`／`pair(key, args)` 查表）。`pair` 保證 zh_tw 模式輸出與舊雙語排版逐字相同（`zh`＋`zh2` 雙行），en/ja 為單行顯示；GDScript `%` 要求參數精確匹配，故只格式化含佔位符的字串。
+- 翻譯表 `data/i18n.json`：219 個 key × 三語（含所有 toast、按鈕、HUD、獎勵、稀有度、合成流程）。資料 JSON 全數加上 `name_ja`（怪物／裝備／關卡／角色含 description_ja），endless 關卡與 zone 名同步日文化（`LanguageManager.pick()` 依語言取 name_zh/name/name_ja）。
+- 字型：新增 M PLUS Rounded 1c（500/700，OFL）供日文；`UITheme.shared_font` 依語言選字型並依 role+language 快取。ChironGoRoundTC 缺 復從氣款 等字，翻譯文案已改寫避開；測試內建三語字型 glyph 涵蓋檢查。
+- 六個畫面全部改用 key 式 helper（`make_tr_label`／`make_tr_dual`／`make_tr_en_dual`／`make_tr_button`／`make_pair_button`／`set_tr_button_text`）；battle 動態字串（stage/monster 名、combo、倒數、勝敗面板）與 gacha 合成預覽全部三語化。
+- 切換入口：開始畫面右上三顆語言鈕（各語以自己的字型渲染，避免缺字）、地圖 header 語言循環鈕；切換後存檔並 `reload_current_scene()` 重建畫面。
+- 測試：vertical_slice 新增 `_test_language_system`（預設 zh_tw、三語查表、資料 pick、存檔 round-trip、字型 glyph 涵蓋、循環順序）；runtime 新增 `_test_language_toggle`（開始畫面按鈕存檔、重建後英文文案、地圖循環鈕）與 `_test_language_layout`（三語下所有按鈕標籤不侵入其他按鈕）。既有兩套 headless 測試維持通過；OpenGL 視覺擷取 62/62（新增 en/ja 各 10 張開始／地圖／角色／轉蛋／戰鬥畫面），PIL 差異驗證三語皆有實際渲染變化。
+- 2026-09-17：三語版本重新匯出 Xcode 專案（含 i18n.json 與 M PLUS 字型，pck ~29.5MB）；`xcodebuild` 真機 arm64 與模擬器 x86_64 均 BUILD SUCCEEDED（CODE_SIGNING_ALLOWED=NO，真機安裝需在 Xcode 選團隊簽名）。
+
+## 即時玩家對戰（PvP）— 2026-09-21
+
+- 制度：鏡像 PvE 攻擊制 — 伺服器以同一 seed 生成同組題目，雙方同時作答；答對照連擊加成攻擊對手（`calculate_damage`），答錯／逾時自身受創（`damage_taken(PVP_BASE_ATTACK, 0)`）；固定 HP 30／攻 10，題目參數取兩人已解鎖關卡較低者；每題 10 秒、倒數 3-2-1（0.8s/拍）；勝 30 金幣、敗／平 10 金幣；對戰扣 1 體力（match_found 時扣，rejoin 不重扣）。
+- 網路層：`PvpNetwork` autoload（client 狀態機 + 權威伺服器雙模式）+ `pvp_protocol.gd` 常數（訊息／錯誤／結束原因／狀態）。傳輸用 high-level MultiplayerAPI + `WebSocketMultiplayerPeer`（autoload 與測試實例節點路徑同名 `/root/PvpNetwork` 使 RPC 對上）；所有訊息 `rpc_id` 點對點（絕不廣播，避免跨場洩漏）。伺服器模式：`--pvp-server` 參數或 `PVP_SERVER=1`，埠號取 `$PORT` 否則 9123。`bootstrap` 場景成為新 main scene：server 模式停留待命，一般客戶端轉跳主選單。
+- 配對與房間：快速配對 FIFO 即時撮合；4 字元房間碼（去混淆字母集）、房間 120 秒過期（`ERR_ROOM_EXPIRED`）；無效房碼回 `ERR_INVALID_ROOM` 且客戶端回到大廳狀態。
+- 斷線重連：比賽中斷線進入 10 秒重連視窗（`phase=reconnect`、token-based rejoin），對手端顯示倒數覆蓋層；rejoin 成功回補 match payload（resumed）＋當前題目（剩餘秒數不足補 3 秒寬限）；放棄／逾時判負 `opponent_forfeit`；主動離開判負 `you_left`（對手勝）。客戶端 `_process` 每 1.5s 自動重試連線（連線逾時 10s）。
+- 畫面：`pvp_lobby`（暱稱編輯存檔、快速配對、開房／輸入房碼加入、狀態列、toast）＋ `pvp_battle`（雙方頭貼／HP 條／連擊、題目卡＋10 秒計時條、數字鍵盤、對答回饋、重連／結果覆蓋層）；開始畫面新增「玩家對戰」入口鈕（哥布林與冒險鈕之間，goblin 層下緣 0.72→0.70）。大廳／對戰場景 Panel 內改用 MarginContainer（Panel 的 margin theme constant 無效，會導致內容溢出）。
+- i18n：`pvp.*` 33 keys × 三語。ChironGoRoundTC 為子集字型，實測缺 競技待朋友房代碼暱稱大廳伺其你 等字 — 文案改寫為「對戰場／通關號／玩家號／離開／連不上主機」等已覆蓋字；省略號全語系改 ASCII `...`（TC 拉丁無 U+2026）。字型涵蓋測試恢復通過。
+- 伺服器部署：`Linux Server` export preset（dedicated_server、embed_pck、排除 build/tests/web）→ `build/server/goblin_pvp_server.x86_64`（96MB）；`Dockerfile.server`（debian-slim、非 root、`PVP_SERVER=1`、EXPOSE 9123）；客戶端伺服器位址優先序：`PVP_SERVER_URL` env → `data/server_config.json` `default_url`；README 補部署流程（Railway 第二個 service）。
+- 測試：新增 `tests/pvp_flow_runner.tscn` 整合測試 — 以三個獨立 per-viewport `SceneMultiplayer` 網域跑真實本機 WebSocket 對戰：快速配對全場戰（同 seed、HP、回合結算、勝敗獎勵與金幣入帳）、房碼流程（開房／小寫房碼加入／对称傷害／離開判負）、斷線重連回補（HP 保留、token 互異、對手恢復通知）、放棄判負、無效房碼錯誤、體力精確扣 8。注意：SceneTree 只自動 poll 根 API，per-viewport 測試網域需每幀手動 `poll()`；`is_server_mode` 的環境偵測以 `_server_mode_resolved` 鎖定，避免 `_ready` 蓋掉測試預設。PvpNetwork 另暴露 last_round_payload/last_round_index/last_end_payload/last_error/last_room_code/opponent_offline_seen/current_question_index 供 UI 與測試輪詢。
+- 驗證：`LONG_TERM_SYSTEMS_TESTS_PASS`、`RUNTIME_FLOW_TESTS_PASS`、`PVP_FLOW_TESTS_PASS`；OpenGL 視覺擷取 68/68（新增 zh/en/ja 大廳＋對戰 6 張，並修復 lobby toast 位置與名字面板排版）；`Linux Server` 匯出成功；Xcode 專案重新匯出後 `xcodebuild -sdk iphoneos CODE_SIGNING_ALLOWED=NO` BUILD SUCCEEDED；Web QA bundle 已更新至 `web/`。

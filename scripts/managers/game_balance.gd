@@ -52,6 +52,27 @@ const AD_GEM_REWARD: int = 100
 const GACHA_SINGLE_COST: int = 100
 const GACHA_TEN_COST: int = 1000
 
+# Stamina gates stage entries instead of hard paywalls. One point is consumed
+# when a battle starts (including a defeat retry), regen is wall-clock based,
+# and a rewarded ad is the emergency refill for younger players.
+const STAMINA_MAX: int = 20
+const STAMINA_PER_STAGE: int = 1
+const STAMINA_REGEN_SECONDS: float = 600.0
+const STAMINA_AD_REWARD: int = 5
+
+# Real-time PvP uses fixed fair stats so matches are pure arithmetic skill,
+# independent of each child's progression. The server is authoritative: both
+# clients receive the same seeded question stream and the server validates
+# every answer before applying damage.
+const PVP_BASE_HP: int = 30
+const PVP_BASE_ATTACK: int = 10
+const PVP_QUESTION_SECONDS: int = 10
+const PVP_RECONNECT_SECONDS: float = 10.0
+const PVP_ROOM_LIFETIME_SECONDS: float = 120.0
+const PVP_WIN_COINS: int = 30
+const PVP_LOSE_COINS: int = 10
+const PVP_SERVER_PORT: int = 9123
+
 const RARITY_MULTIPLIERS: Dictionary = {
 	"common": 1.0,
 	"uncommon": 1.22,
@@ -161,3 +182,21 @@ static func damage_taken(monster_attack: int, defense: int) -> int:
 	# floor prevents all-defense builds from becoming invulnerable in late chapters.
 	var mitigation_floor: int = maxi(1, int(ceil(float(safe_attack) * 0.25)))
 	return maxi(mitigation_floor, safe_attack - maxi(0, defense))
+
+## Rolls wall-clock stamina regen forward from a persisted (stamina, updated_at)
+## pair. Shared by save normalization and read-only UI queries so offline catch-up
+## and the on-screen countdown always agree.
+static func apply_stamina_regen(stamina: int, updated_at: int, now: float) -> Dictionary:
+	var safe_stamina: int = clampi(maxi(0, stamina), 0, STAMINA_MAX)
+	var reference_time: float = now
+	if updated_at > 0 and float(updated_at) < now:
+		reference_time = float(updated_at)
+	if safe_stamina >= STAMINA_MAX:
+		return {"stamina": STAMINA_MAX, "updated_at": int(now)}
+	var elapsed: float = maxf(0.0, now - reference_time)
+	var gained: int = int(floor(elapsed / STAMINA_REGEN_SECONDS))
+	var new_stamina: int = mini(STAMINA_MAX, safe_stamina + gained)
+	var new_updated: float = reference_time + float(gained) * STAMINA_REGEN_SECONDS
+	if new_stamina >= STAMINA_MAX:
+		new_updated = now
+	return {"stamina": new_stamina, "updated_at": int(new_updated)}

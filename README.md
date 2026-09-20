@@ -89,3 +89,19 @@ Railway 建立 service 時選 GitHub repo `KennethEnglun/goblinmath`，root dire
 目前存檔版本為 7，另包含 `gems` 鑽石、總能力點數、各能力加點紀錄與裝備累計強化花費欄位；舊版首次遷移時會補發一次 300 鑽石，舊裝備會按等級重建累計強化花費，損壞存檔會沿用 backup recovery 流程。
 
 無限章節的星級／嘗試明細會保留 World 1 與最近進度，最多 128 筆，避免長期遊玩讓本機存檔無限膨脹；完成進度則由 sequential high-water mark 持續保留。
+
+## 即時玩家對戰（PvP）
+
+PvP 採「鏡像 PvE 攻擊制」：雙方解同一組（同 seed）題目，答對就攻擊對手（依連擊加成），答錯或逾時自身受創；固定 HP 30、基礎攻擊 10，題目參數取兩位玩家已解鎖關卡中較低者的範圍。每題 10 秒，由伺服器權威判定；斷線有 10 秒重連視窗（token 自動 rejoin），逾時判負。對戰消耗 1 體力，勝方 30 金幣、敗方／平手 10 金幣。配對支援快速配對與 4 字元房間代碼（房間 120 秒過期）。
+
+### 伺服器部署（Railway 第二個 service）
+
+1. 匯出 headless Linux server：
+
+```sh
+mkdir -p build/server
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . --export-release "Linux Server" build/server/goblin_pvp_server.x86_64
+```
+
+2. 以 `Dockerfile.server` 建置映像並部署（Railway 新增 service 時選「Deploy from Docker image」或把本 repo 的此目錄設為 root）。Railway 會注入 `PORT`；本機測試不設 `PORT` 時使用預設 9123。
+3. 用戶端連線位址優先順序：`PVP_SERVER_URL` 環境變數 → `data/server_config.json` 的 `default_url`。將 `default_url` 填成 `wss://<你的 railway domain>` 後重新打包 client（Web / iOS）。

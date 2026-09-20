@@ -11,7 +11,8 @@ config_version=5
 [application]
 
 config/name="哥布林升級中"
-run/main_scene="res://scenes/main/main_menu.tscn"
+config/icon="res://assets/ui/start/app_icon_v1.png"
+run/main_scene="res://scenes/main/bootstrap.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 boot_splash/bg_color=Color(0.98, 0.82, 0.87, 1)
 boot_splash/show_image=false
@@ -21,8 +22,10 @@ boot_splash/show_image=false
 DataManager="*res://scripts/managers/data_manager.gd"
 SaveManager="*res://scripts/managers/save_manager.gd"
 GameManager="*res://scripts/managers/game_manager.gd"
+LanguageManager="*res://scripts/managers/language_manager.gd"
 AudioManager="*res://scripts/managers/audio_manager.gd"
 RewardedAdService="*res://scripts/managers/rewarded_ad_service.gd"
+PvpNetwork="*res://scripts/managers/pvp_network.gd"
 
 [display]
 
@@ -45,4 +48,5 @@ theme/default_font_multichannel_signed_distance_field=true
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true
 environment/defaults/default_clear_color=Color(0.98, 0.82, 0.87, 1)

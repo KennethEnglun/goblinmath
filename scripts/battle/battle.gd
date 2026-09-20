@@ -135,14 +135,20 @@ func _build_screen() -> void:
 	level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	level_label.custom_minimum_size = Vector2(180, 0)
 	top_bar.add_child(level_label)
-	battle_pause_button = UITheme.make_button("Ⅱ", "暫停", Color("#d9edf0"), Vector2(140, 96))
+	battle_pause_button = UITheme.make_tr_button("battle.pause", Color("#d9edf0"), Vector2(140, 96))
 	battle_pause_button.name = "BattlePauseButton"
 	battle_pause_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	battle_pause_button.pressed.connect(_on_pause_pressed)
 	top_bar.add_child(battle_pause_button)
 
 	var stage_id: int = int(stage_data.get("id", 1))
-	var battle_badge: VBoxContainer = UITheme.make_dual_label("STAGE %d" % stage_id, str(stage_data.get("name_zh", "戰鬥")), 29, 17, UITheme.INK)
+	var stage_display_name: String = LanguageManager.pick(stage_data)
+	var battle_badge: VBoxContainer = UITheme.make_trf_en_dual("battle.stage_badge", [stage_id], 29, 17, UITheme.INK)
+	if LanguageManager.get_language() == LanguageManager.LANGUAGE_ZH_TW:
+		# The original zh_tw layout shows the authored stage name under the badge.
+		var badge_secondary: Label = battle_badge.get_node_or_null("SecondaryLabel") as Label
+		if badge_secondary != null:
+			badge_secondary.text = stage_display_name
 	battle_badge.custom_minimum_size = Vector2(0, 70)
 	content.add_child(battle_badge)
 
@@ -159,7 +165,7 @@ func _build_screen() -> void:
 	player_sprite.position = Vector2(55, 86)
 	monster_sprite.position = Vector2(580, 10)
 
-	var monster_name: VBoxContainer = UITheme.make_dual_label(str(monster_data.get("name", "Green Blob")), "%s  ·  ATK %d" % [str(monster_data.get("name_zh", "綠豆怪")), monster_attack], 28, 17, UITheme.INK)
+	var monster_name: VBoxContainer = _make_monster_badge()
 	monster_name.custom_minimum_size = Vector2(0, 72)
 	content.add_child(monster_name)
 	monster_hp_bar = ProgressBar.new()
@@ -250,6 +256,17 @@ func _build_screen() -> void:
 	_update_level()
 	move_child(battle_fx_layer, get_child_count() - 1)
 
+func _make_monster_badge() -> VBoxContainer:
+	var english_name: String = str(monster_data.get("name", "Green Blob"))
+	var local_name: String = LanguageManager.pick(monster_data)
+	match LanguageManager.get_language():
+		LanguageManager.LANGUAGE_ZH_TW:
+			return UITheme.make_pair_stack(english_name, "%s  ·  ATK %d" % [local_name, monster_attack], 28, 17, UITheme.INK, false)
+		LanguageManager.LANGUAGE_JA:
+			return UITheme.make_pair_stack("%s  ·  こうげき %d" % [local_name, monster_attack], "", 28, 17, UITheme.INK, false)
+		_:
+			return UITheme.make_pair_stack("%s  ·  ATK %d" % [english_name, monster_attack], "", 28, 17, UITheme.INK, false)
+
 func _make_full_layer(layer_name: String, filter: Control.MouseFilter) -> Control:
 	var layer: Control = Control.new()
 	layer.name = layer_name
@@ -299,22 +316,22 @@ func _update_enemy_attack_countdown() -> void:
 		enemy_attack_label.text = ""
 		return
 	if battle_paused:
-		enemy_attack_label.text = "PAUSED  ·  暫停中（倒數已停止）"
+		enemy_attack_label.text = LanguageManager.t("battle.countdown_paused")
 		enemy_attack_label.add_theme_color_override("font_color", UITheme.MUTED_INK)
 		return
 	if battle_suspended:
-		enemy_attack_label.text = "PAUSED  ·  回來後繼續"
+		enemy_attack_label.text = LanguageManager.t("battle.countdown_suspended")
 		enemy_attack_label.add_theme_color_override("font_color", UITheme.MUTED_INK)
 		return
 	if enemy_attack_in_progress:
-		enemy_attack_label.text = "ENEMY ATTACK!  ·  敵人攻擊中"
+		enemy_attack_label.text = LanguageManager.t("battle.enemy_attacking")
 		enemy_attack_label.add_theme_color_override("font_color", UITheme.RED.darkened(0.1))
 		return
 	if enemy_attack_timer == null:
 		return
 	var seconds_left: int = maxi(1, int(ceil(enemy_attack_timer.time_left)))
 	var incoming_damage: int = GameManager.calculate_incoming_damage(monster_attack)
-	enemy_attack_label.text = "AUTO %ds  ·  自動攻擊  -%d HP" % [seconds_left, incoming_damage]
+	enemy_attack_label.text = LanguageManager.tf("battle.auto_attack_countdown", [seconds_left, incoming_damage])
 	var countdown_color: Color = UITheme.RED if seconds_left <= 2 else UITheme.MUTED_INK
 	enemy_attack_label.add_theme_color_override("font_color", countdown_color)
 
@@ -437,7 +454,7 @@ func _resolve_correct() -> void:
 	monster_hp = maxi(0, monster_hp - damage)
 	monster_hp_bar.value = monster_hp
 	monster_hp_text.text = "HP %d / %d" % [monster_hp, _get_monster_max_hp()]
-	_set_feedback("NICE!\n答對！", UITheme.GREEN.darkened(0.35), Color("#eff9db"), Color("#94c67e"), 2)
+	_set_feedback(LanguageManager.t("battle.correct"), UITheme.GREEN.darkened(0.35), Color("#eff9db"), Color("#94c67e"), 2)
 	_update_combo()
 	_show_damage_number(damage)
 	_spawn_battle_effect(HIT_EFFECT_PATH, monster_sprite.get_global_rect().get_center(), Vector2(270, 270), 0.46)
@@ -457,7 +474,7 @@ func _resolve_wrong() -> void:
 	mistake_count += 1
 	var incoming_damage: int = GameManager.calculate_incoming_damage(monster_attack)
 	player_hp = maxi(0, player_hp - incoming_damage)
-	_set_feedback("-%d HP  ·  TRY AGAIN\n答錯了，再試一次" % incoming_damage, UITheme.RED.darkened(0.15), Color("#fff0ef"), Color("#e89aa0"), 2)
+	_set_feedback(LanguageManager.tf("battle.wrong", [incoming_damage]), UITheme.RED.darkened(0.15), Color("#fff0ef"), Color("#e89aa0"), 2)
 	_update_combo()
 	_update_hearts()
 	_spawn_battle_effect(MISS_EFFECT_PATH, player_sprite.get_global_rect().get_center(), Vector2(210, 210), 0.42)
@@ -485,7 +502,7 @@ func _on_enemy_attack_timer_timeout() -> void:
 	var incoming_damage: int = GameManager.calculate_incoming_damage(monster_attack)
 	player_hp = maxi(0, player_hp - incoming_damage)
 	enemy_auto_attack_count += 1
-	_set_feedback("AUTO ATTACK!\n敵人自動攻擊  -%d HP" % incoming_damage, UITheme.RED.darkened(0.1), Color("#fff0ef"), Color("#e89aa0"), 2)
+	_set_feedback(LanguageManager.tf("battle.auto_attack_hit", [incoming_damage]), UITheme.RED.darkened(0.1), Color("#fff0ef"), Color("#e89aa0"), 2)
 	_update_hearts()
 	_show_player_damage_number(incoming_damage)
 	_spawn_battle_effect(MISS_EFFECT_PATH, player_sprite.get_global_rect().get_center(), Vector2(210, 210), 0.42)
@@ -548,13 +565,13 @@ func _show_pause_overlay() -> void:
 	stack.alignment = BoxContainer.ALIGNMENT_CENTER
 	stack.add_theme_constant_override("separation", 16)
 	margin.add_child(stack)
-	stack.add_child(UITheme.make_dual_label("PAUSED", "暫停中", 56, 29, UITheme.INK))
-	stack.add_child(UITheme.make_label("敵人倒數已停止\n準備好後再繼續答題", 25, UITheme.MUTED_INK))
-	var resume_button: Button = UITheme.make_button("RESUME", "繼續答題", UITheme.GREEN, Vector2(0, 112))
+	stack.add_child(UITheme.make_tr_en_dual("battle.pause_overlay", 56, 29, UITheme.INK))
+	stack.add_child(UITheme.make_tr_label("battle.pause_overlay_hint", 25, UITheme.MUTED_INK))
+	var resume_button: Button = UITheme.make_tr_button("battle.resume", UITheme.GREEN, Vector2(0, 112))
 	resume_button.name = "ResumeBattleButton"
 	resume_button.pressed.connect(_on_resume_pressed)
 	stack.add_child(resume_button)
-	var map_button: Button = UITheme.make_button("MAP", "返回地圖", Color("#d9edf0"), Vector2(0, 100))
+	var map_button: Button = UITheme.make_tr_button("battle.pause_map", Color("#d9edf0"), Vector2(0, 100))
 	map_button.name = "PauseMapButton"
 	map_button.pressed.connect(_on_pause_map_pressed)
 	stack.add_child(map_button)
@@ -697,7 +714,7 @@ func _update_combo() -> void:
 	if combo <= 0:
 		combo_label.text = ""
 	else:
-		combo_label.text = "%d COMBO  /  連擊" % combo
+		combo_label.text = LanguageManager.tf("battle.combo", [combo])
 
 func _set_keypad_disabled(disabled: bool) -> void:
 	for button: Button in keypad_buttons:
@@ -772,13 +789,13 @@ func _show_result_panel(victory: bool, result: Dictionary) -> void:
 	margin.add_child(stack)
 
 	if victory:
-		var title: VBoxContainer = UITheme.make_dual_label("VICTORY!", "勝利！", 62, 30, UITheme.INK)
+		var title: VBoxContainer = UITheme.make_tr_en_dual("battle.victory", 62, 30, UITheme.INK)
 		stack.add_child(title)
 		if int(result.get("levels_gained", 0)) > 0:
 			var level_up: Panel = UITheme.make_panel(Color("#ffe190"), Color("#d99555"), 30, 4)
 			level_up.custom_minimum_size = Vector2(0, 170)
 			stack.add_child(level_up)
-			var level_stack: VBoxContainer = UITheme.make_dual_label("LEVEL UP!", "升級！  LV.%d" % int(result.get("new_level", GameManager.get_level())), 45, 24, UITheme.INK)
+			var level_stack: VBoxContainer = UITheme.make_trf_en_dual("battle.level_up", [int(result.get("new_level", GameManager.get_level()))], 45, 24, UITheme.INK)
 			level_stack.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 			level_up.add_child(level_stack)
 		var rewards: VBoxContainer = VBoxContainer.new()
@@ -787,47 +804,47 @@ func _show_result_panel(victory: bool, result: Dictionary) -> void:
 		stack.add_child(rewards)
 		var stars: int = clampi(int(result.get("best_stars", result.get("stars", 1))), 1, GameBalance.MAX_STAGE_STARS)
 		var star_text: String = "★".repeat(stars) + "☆".repeat(GameBalance.MAX_STAGE_STARS - stars)
-		rewards.add_child(UITheme.make_label("%s  本關評價" % star_text, 34, UITheme.ORANGE))
-		rewards.add_child(UITheme.make_label("EXP  +%d" % int(result.get("exp", 0)), 32, UITheme.MUTED_INK))
-		rewards.add_child(UITheme.make_label("COINS  +%d" % int(result.get("coins", 0)), 32, UITheme.MUTED_INK))
+		rewards.add_child(UITheme.make_trf_label("battle.stage_rating", [star_text], 34, UITheme.ORANGE))
+		rewards.add_child(UITheme.make_trf_label("battle.reward_exp", [int(result.get("exp", 0))], 32, UITheme.MUTED_INK))
+		rewards.add_child(UITheme.make_trf_label("battle.reward_coins", [int(result.get("coins", 0))], 32, UITheme.MUTED_INK))
 		if int(result.get("gems", 0)) > 0:
-			rewards.add_child(_make_reward_line("+%d GEMS  ·  鑽石" % int(result.get("gems", 0)), 32, Color("#c58d2a"), DIAMOND_ICON_PATH))
-		rewards.add_child(UITheme.make_label("ACCURACY %d%%  ·  錯題 %d" % [int(round(float(result.get("accuracy", 1.0)) * 100.0)), int(result.get("mistakes", 0))], 22, UITheme.MUTED_INK))
+			rewards.add_child(_make_reward_line(LanguageManager.tf("battle.reward_gems", [int(result.get("gems", 0))]), 32, Color("#c58d2a"), DIAMOND_ICON_PATH))
+		rewards.add_child(UITheme.make_trf_label("battle.accuracy", [int(round(float(result.get("accuracy", 1.0)) * 100.0)), int(result.get("mistakes", 0))], 22, UITheme.MUTED_INK))
 		if enemy_auto_attack_count > 0:
-			rewards.add_child(UITheme.make_label("AUTO HITS %d  ·  自動受擊" % enemy_auto_attack_count, 21, UITheme.RED.darkened(0.15)))
+			rewards.add_child(UITheme.make_trf_label("battle.auto_hits", [enemy_auto_attack_count], 21, UITheme.RED.darkened(0.15)))
 		if not bool(result.get("first_clear", true)):
-			rewards.add_child(UITheme.make_label("REPLAY REWARD 50%  ·  重玩獎勵", 20, UITheme.MUTED_INK))
-		var dropped_item: Variant = result.get("dropped_item", {})
-		if dropped_item is Dictionary and not dropped_item.is_empty():
-			rewards.add_child(UITheme.make_label("DROP  %s" % EquipmentSystem.describe_item(dropped_item), 24, UITheme.MINT_DARK))
-		elif int(result.get("auto_salvage_coins", 0)) > 0:
-			rewards.add_child(UITheme.make_label("背包已滿，自動換成 %d 金幣" % int(result.get("auto_salvage_coins", 0)), 21, UITheme.MINT_DARK))
+			rewards.add_child(UITheme.make_tr_label("battle.replay_reward", 20, UITheme.MUTED_INK))
 		if bool(result.get("world_complete", false)):
-			rewards.add_child(UITheme.make_label("花漾原野完成！下一章已開放", 24, UITheme.MINT_DARK))
+			rewards.add_child(UITheme.make_tr_label("battle.world_complete", 24, UITheme.MINT_DARK))
 		elif bool(result.get("chapter_complete", false)):
-			rewards.add_child(UITheme.make_label("第 %d 章完成！下一章已開放" % GameBalance.chapter_for_stage(int(stage_data.get("id", 1))), 24, UITheme.MINT_DARK))
+			rewards.add_child(UITheme.make_trf_label("battle.chapter_complete", [GameBalance.chapter_for_stage(int(stage_data.get("id", 1)))], 24, UITheme.MINT_DARK))
 		elif int(result.get("stage_unlocked", -1)) > 0:
 			var unlocked_stage: int = int(result.get("stage_unlocked", -1))
-			rewards.add_child(UITheme.make_label("第 %d 關已解鎖" % unlocked_stage, 22, UITheme.MINT_DARK))
+			rewards.add_child(UITheme.make_trf_label("battle.stage_unlocked", [unlocked_stage], 22, UITheme.MINT_DARK))
 		else:
-			rewards.add_child(UITheme.make_label("關卡完成！", 22, UITheme.MINT_DARK))
-		var continue_button: Button = UITheme.make_button("CONTINUE", "繼續", UITheme.YELLOW, Vector2(0, 124))
+			rewards.add_child(UITheme.make_tr_label("battle.stage_done", 22, UITheme.MINT_DARK))
+		var continue_button: Button = UITheme.make_tr_button("battle.continue", UITheme.YELLOW, Vector2(0, 124))
 		continue_button.name = "ContinueBattleButton"
 		continue_button.pressed.connect(_on_continue_pressed)
 		stack.add_child(continue_button)
 	else:
-		stack.add_child(UITheme.make_dual_label("TRY AGAIN", "再試一次", 58, 28, UITheme.INK))
-		stack.add_child(UITheme.make_label("Your HP reached zero.\n生命值歸零了。", 26, UITheme.MUTED_INK))
-		stack.add_child(UITheme.make_label("AUTO ATTACKS %d  ·  敵人攻擊會隨關卡加快" % enemy_auto_attack_count, 21, UITheme.RED.darkened(0.15)))
-		var retry_button: Button = UITheme.make_button("RETRY", "再挑戰一次", UITheme.YELLOW, Vector2(0, 120))
+		stack.add_child(UITheme.make_tr_en_dual("battle.defeat", 58, 28, UITheme.INK))
+		stack.add_child(UITheme.make_tr_label("battle.defeat_hint", 26, UITheme.MUTED_INK))
+		stack.add_child(UITheme.make_trf_label("battle.auto_attacks_hint", [enemy_auto_attack_count], 21, UITheme.RED.darkened(0.15)))
+		# A retry is a fresh battle entry, so it costs the same stamina as the
+		# original run. With no stamina left the player can still return to the
+		# map (and watch an ad there) instead of being stuck on this panel.
+		var retry_needs_stamina: bool = GameManager.get_stamina() < GameBalance.STAMINA_PER_STAGE
+		var retry_button: Button = UITheme.make_tr_button("battle.retry_needs_stamina" if retry_needs_stamina else "battle.retry", UITheme.YELLOW, Vector2(0, 120))
 		retry_button.name = "RetryBattleButton"
 		retry_button.pressed.connect(_on_retry_pressed)
+		retry_button.disabled = retry_needs_stamina
 		stack.add_child(retry_button)
-		var map_button: Button = UITheme.make_button("MAP", "返回地圖", Color("#d9edf0"), Vector2(0, 100))
+		var map_button: Button = UITheme.make_tr_button("battle.defeat_map", Color("#d9edf0"), Vector2(0, 100))
 		map_button.name = "DefeatMapButton"
 		map_button.pressed.connect(_on_map_pressed)
 		stack.add_child(map_button)
-	# Level-up, drops and chapter rewards can all appear in the same result.
+		# Level and chapter rewards can all appear in the same result.
 	card.custom_minimum_size.y = maxf(card.custom_minimum_size.y, stack.get_combined_minimum_size().y + 128.0)
 
 func _make_reward_line(text_value: String, font_size: int, color: Color, icon_path: String = "") -> HBoxContainer:
@@ -851,6 +868,9 @@ func _on_continue_pressed() -> void:
 
 func _on_retry_pressed() -> void:
 	AudioManager.play_sfx("button_click")
+	if GameManager.get_stamina() < GameBalance.STAMINA_PER_STAGE:
+		GameManager.go_to_world_map()
+		return
 	GameManager.start_stage(int(GameManager.player_state.get("current_stage", 1)))
 
 func _on_map_pressed() -> void:

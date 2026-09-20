@@ -1,0 +1,19 @@
+# Dedicated PvP match server (headless Godot).
+# Build context must contain build/server/goblin_pvp_server.x86_64:
+#   godot --headless --export-release "Linux Server" build/server/goblin_pvp_server.x86_64
+#   docker build -f Dockerfile.server -t goblin-pvp-server .
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends ca-certificates \
+	&& rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY build/server/goblin_pvp_server.x86_64 /app/server.x86_64
+RUN chmod +x /app/server.x86_64 && useradd --system --uid 1001 pvp \
+	&& mkdir -p /home/pvp/.local/share/godot && chown -R pvp:pvp /home/pvp
+USER pvp
+ENV PVP_SERVER=1
+ENV HOME=/home/pvp
+EXPOSE 9123
+CMD ["/app/server.x86_64", "--pvp-server", "--headless"]

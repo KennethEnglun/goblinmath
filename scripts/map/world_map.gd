@@ -6,6 +6,7 @@ const SEGMENT_HEIGHT: float = 1536.0
 const MAP_DRAG_THRESHOLD: float = 12.0
 const MAP_SCROLL_TOP_GUTTER: float = 28.0
 const MAP_SCROLL_EDGE_PADDING: float = 96.0
+const BOTTOM_HUD_HEIGHT: float = 384.0
 const STAGE_NODE_SCRIPT = preload("res://scripts/map/stage_node.gd")
 const START_EFFECTS_PATH: String = "res://assets/ui/start/start_effects_v2.png"
 
@@ -34,6 +35,12 @@ var fixed_hud_layer: Control
 var stats_label: Label
 var zone_label: Label
 var chapter_label: Label
+var stamina_label: Label
+var watch_ad_stamina_button: Button
+var map_toast_panel: Panel
+var map_toast_label: Label
+var map_toast_tween: Tween
+var stamina_tick_timer: Timer
 var previous_button: Button
 var next_button: Button
 var player_marker: TextureRect
@@ -65,12 +72,55 @@ func _ready() -> void:
 	_build_screen()
 	_load_chapter(current_chapter)
 	set_process_input(true)
+	_connect_ad_service()
 
 func _exit_tree() -> void:
 	# Invalidate any deferred scroll callback before the map leaves the tree.
 	chapter_build_id += 1
 	chapter_switch_busy = true
 	_stop_map_animations()
+	_disconnect_ad_service()
+
+func _connect_ad_service() -> void:
+	var ad_service: Node = get_node_or_null("/root/RewardedAdService") as Node
+	if ad_service == null:
+		return
+	var reward_callback: Callable = Callable(self, "_on_rewarded_ad_completed")
+	if not ad_service.is_connected("reward_completed", reward_callback):
+		ad_service.connect("reward_completed", reward_callback)
+	var availability_callback: Callable = Callable(self, "_on_rewarded_ad_availability_changed")
+	if ad_service.has_signal("availability_changed") and not ad_service.is_connected("availability_changed", availability_callback):
+		ad_service.connect("availability_changed", availability_callback)
+
+func _disconnect_ad_service() -> void:
+	var ad_service: Node = get_node_or_null("/root/RewardedAdService") as Node
+	if ad_service == null:
+		return
+	var reward_callback: Callable = Callable(self, "_on_rewarded_ad_completed")
+	if ad_service.is_connected("reward_completed", reward_callback):
+		ad_service.disconnect("reward_completed", reward_callback)
+	var availability_callback: Callable = Callable(self, "_on_rewarded_ad_availability_changed")
+	if ad_service.is_connected("availability_changed", availability_callback):
+		ad_service.disconnect("availability_changed", availability_callback)
+
+func _on_rewarded_ad_completed(kind: String, amount: int) -> void:
+	if kind != RewardedAdService.REWARD_KIND_STAMINA:
+		return
+	if amount != GameBalance.STAMINA_AD_REWARD:
+		return
+	if GameManager.add_stamina(amount):
+		_refresh_progress()
+		_refresh_stamina_ui()
+		_show_map_toast(LanguageManager.tf("map.toast_ad_reward", [amount]))
+
+func _on_rewarded_ad_availability_changed(_available: bool) -> void:
+	_refresh_stamina_ui()
+
+func _on_language_button_pressed() -> void:
+	AudioManager.play_sfx("button_click")
+	LanguageManager.cycle_language()
+	if get_tree().current_scene == self:
+		get_tree().reload_current_scene()
 
 func _input(event: InputEvent) -> void:
 	if chapter_switch_busy or scroll_container == null or not is_instance_valid(scroll_container):
@@ -140,7 +190,7 @@ func _build_screen() -> void:
 	# Leave a visual buffer below the fixed header so the first visible stage
 	# node cannot be clipped by the header when the map centers the current one.
 	scroll_container.offset_top = map_top_margin + 200.0 + MAP_SCROLL_TOP_GUTTER
-	scroll_container.offset_bottom = -(map_bottom_margin + 288.0)
+	scroll_container.offset_bottom = -(map_bottom_margin + BOTTOM_HUD_HEIGHT)
 	scroll_container.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll_container.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	scroll_container.follow_focus = true
@@ -306,9 +356,9 @@ func _build_path() -> void:
 	path_layer.add_child(path)
 
 func _build_decorations() -> void:
-	_add_zone_banner("星光丘・第%d章" % current_chapter, Vector2(300, 56), Color("#f6e7ff"), Color("#ad83bc"))
-	_add_zone_banner("櫻林・第%d章" % current_chapter, Vector2(300, 1558), Color("#ffe5ec"), Color("#d88ea5"))
-	_add_zone_banner("花野・第%d章" % current_chapter, Vector2(300, 3092), Color("#fff0cf"), Color("#c9a666"))
+	_add_zone_banner(LanguageManager.tf("map.banner.starlight_hill", [current_chapter]), Vector2(300, 56), Color("#f6e7ff"), Color("#ad83bc"))
+	_add_zone_banner(LanguageManager.tf("map.banner.sakura_woods", [current_chapter]), Vector2(300, 1558), Color("#ffe5ec"), Color("#d88ea5"))
+	_add_zone_banner(LanguageManager.tf("map.banner.flower_meadow", [current_chapter]), Vector2(300, 3092), Color("#fff0cf"), Color("#c9a666"))
 	_add_soft_shape(decoration_back_layer, Vector2(-130, 1150), Vector2(480, 250), Color("#d7c7ef"), 170)
 	_add_soft_shape(decoration_back_layer, Vector2(760, 920), Vector2(430, 280), Color("#ebd5f2"), 170)
 	_add_soft_shape(decoration_back_layer, Vector2(-120, 2410), Vector2(460, 310), Color("#f2bccc"), 180)
@@ -407,7 +457,7 @@ func _build_fixed_hud() -> void:
 	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fixed_hud_layer.add_child(header)
 
-	var title: Label = UITheme.make_label("冒險地圖", 44, UITheme.INK)
+	var title: Label = UITheme.make_tr_label("map.title", 44, UITheme.INK)
 	title.name = "MapTitle"
 	title.position = Vector2(28, 4)
 	title.size = Vector2(470, 48)
@@ -421,20 +471,37 @@ func _build_fixed_hud() -> void:
 	world_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	world_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	header.add_child(world_name_label)
-	chapter_label = UITheme.make_label("第1章", 30, Color("#b36d72"))
+	chapter_label = UITheme.make_trf_label("map.chapter", [1], 30, Color("#b36d72"))
 	chapter_label.name = "ChapterLabel"
-	chapter_label.position = Vector2(650, 8)
-	chapter_label.size = Vector2(300, 58)
+	chapter_label.position = Vector2(636, 8)
+	chapter_label.size = Vector2(196, 58)
 	chapter_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	chapter_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	header.add_child(chapter_label)
-	zone_label = UITheme.make_label("花野", 23, UITheme.MUTED_INK)
+	zone_label = UITheme.make_tr_label("map.zone.flower_meadow", 23, UITheme.MUTED_INK)
 	zone_label.name = "CurrentZoneLabel"
-	zone_label.position = Vector2(690, 60)
-	zone_label.size = Vector2(260, 45)
+	zone_label.position = Vector2(636, 60)
+	zone_label.size = Vector2(196, 45)
 	zone_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	zone_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	header.add_child(zone_label)
+	var language_button: Button = Button.new()
+	language_button.name = "MapLanguageButton"
+	language_button.position = Vector2(844, 2)
+	language_button.size = Vector2(148, 96)
+	language_button.focus_mode = Control.FOCUS_NONE
+	language_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	language_button.text = LanguageManager.current_language_name()
+	language_button.add_theme_font_override("font", UITheme.shared_font_for_language(LanguageManager.get_language(), UITheme.FontRole.BOLD))
+	language_button.add_theme_font_size_override("font_size", 24)
+	language_button.add_theme_color_override("font_color", UITheme.INK)
+	language_button.add_theme_color_override("font_hover_color", UITheme.INK)
+	language_button.add_theme_color_override("font_pressed_color", UITheme.INK)
+	language_button.add_theme_stylebox_override("normal", UITheme.rounded_style(Color(1.0, 0.97, 0.92, 0.94), Color("#e4c9a6"), 24, 3))
+	language_button.add_theme_stylebox_override("hover", UITheme.rounded_style(Color(1.0, 0.97, 0.92, 1.0), Color("#d7a45d"), 24, 3))
+	language_button.add_theme_stylebox_override("pressed", UITheme.rounded_style(Color(0.99, 0.94, 0.87, 1.0), Color("#c9974f"), 24, 3))
+	language_button.pressed.connect(_on_language_button_pressed)
+	header.add_child(language_button)
 	stats_label = UITheme.make_label("", 25, UITheme.MUTED_INK)
 	stats_label.name = "PlayerStats"
 	stats_label.position = Vector2(20, 110)
@@ -448,7 +515,7 @@ func _build_fixed_hud() -> void:
 	bottom_hud.anchor_right = 0.96
 	bottom_hud.anchor_top = 1.0
 	bottom_hud.anchor_bottom = 1.0
-	bottom_hud.offset_top = -(map_bottom_margin + 288.0)
+	bottom_hud.offset_top = -(map_bottom_margin + BOTTOM_HUD_HEIGHT)
 	bottom_hud.offset_bottom = -map_bottom_margin
 	bottom_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fixed_hud_layer.add_child(bottom_hud)
@@ -465,11 +532,38 @@ func _build_fixed_hud() -> void:
 	rows.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.add_child(rows)
 
+	var stamina_row: HBoxContainer = HBoxContainer.new()
+	stamina_row.name = "StaminaRow"
+	stamina_row.add_theme_constant_override("separation", 12)
+	stamina_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rows.add_child(stamina_row)
+	var stamina_panel: Panel = UITheme.make_panel(Color(1.0, 0.98, 0.94, 0.96), Color("#e0a46b"), 24, 3)
+	stamina_panel.name = "StaminaPanel"
+	stamina_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stamina_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stamina_row.add_child(stamina_panel)
+	stamina_label = UITheme.make_label("", 22, UITheme.INK, UITheme.FontRole.BOLD)
+	stamina_label.name = "StaminaLabel"
+	stamina_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	stamina_label.offset_left = 16.0
+	stamina_label.offset_right = -16.0
+	stamina_label.offset_top = 8.0
+	stamina_label.offset_bottom = -8.0
+	stamina_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stamina_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	stamina_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stamina_panel.add_child(stamina_label)
+	var watch_ad_pair: Array = LanguageManager.pair("map.watch_ad", [GameBalance.STAMINA_AD_REWARD])
+	watch_ad_stamina_button = UITheme.make_pair_button(str(watch_ad_pair[0]), str(watch_ad_pair[1]), Color("#ffe19a"), Vector2(320, 84))
+	watch_ad_stamina_button.name = "WatchAdStaminaButton"
+	watch_ad_stamina_button.pressed.connect(_on_watch_ad_stamina_pressed)
+	stamina_row.add_child(watch_ad_stamina_button)
+
 	var page_row: HBoxContainer = HBoxContainer.new()
 	page_row.add_theme_constant_override("separation", 12)
 	page_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	rows.add_child(page_row)
-	previous_button = UITheme.make_button("‹", "上一章", Color("#d9edf0"), Vector2(220, 92))
+	previous_button = UITheme.make_tr_button("map.prev_chapter", Color("#d9edf0"), Vector2(220, 92))
 	previous_button.name = "PreviousChapterButton"
 	previous_button.pressed.connect(_on_previous_chapter_pressed)
 	page_row.add_child(previous_button)
@@ -477,7 +571,7 @@ func _build_fixed_hud() -> void:
 	page_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	page_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	page_row.add_child(page_spacer)
-	next_button = UITheme.make_button("›", "下一章", Color("#d9edf0"), Vector2(220, 92))
+	next_button = UITheme.make_tr_button("map.next_chapter", Color("#d9edf0"), Vector2(220, 92))
 	next_button.name = "NextChapterButton"
 	next_button.pressed.connect(_on_next_chapter_pressed)
 	page_row.add_child(next_button)
@@ -486,23 +580,116 @@ func _build_fixed_hud() -> void:
 	action_row.add_theme_constant_override("separation", 14)
 	action_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	rows.add_child(action_row)
-	var home_button: Button = UITheme.make_button("首頁", "回到開始", Color("#ffe19a"), Vector2(0, 112))
+	var home_button: Button = UITheme.make_tr_button("map.home", Color("#ffe19a"), Vector2(0, 112))
 	home_button.name = "HomeButton"
 	home_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	home_button.pressed.connect(_on_home_pressed)
 	action_row.add_child(home_button)
-	var character_button: Button = UITheme.make_button("角色", "裝備與升級", Color("#bfe7d3"), Vector2(0, 112))
+	var character_button: Button = UITheme.make_tr_button("map.character", Color("#bfe7d3"), Vector2(0, 112))
 	character_button.name = "CharacterButton"
 	character_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	character_button.pressed.connect(_on_character_pressed)
 	action_row.add_child(character_button)
-	var gacha_button: Button = UITheme.make_button("GACHA", "轉蛋", Color("#e5d7ff"), Vector2(0, 112))
+	var gacha_button: Button = UITheme.make_tr_button("map.gacha", Color("#e5d7ff"), Vector2(0, 112))
 	gacha_button.name = "GachaButton"
 	gacha_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	gacha_button.pressed.connect(_on_gacha_pressed)
 	action_row.add_child(gacha_button)
 
+	map_toast_panel = UITheme.make_panel(Color(0.36, 0.18, 0.20, 0.94), Color("#f2b4bb"), 26, 3)
+	map_toast_panel.name = "MapToast"
+	map_toast_panel.anchor_left = 0.06
+	map_toast_panel.anchor_right = 0.94
+	map_toast_panel.anchor_top = 1.0
+	map_toast_panel.anchor_bottom = 1.0
+	map_toast_panel.offset_top = -(map_bottom_margin + BOTTOM_HUD_HEIGHT + 126.0)
+	map_toast_panel.offset_bottom = -(map_bottom_margin + BOTTOM_HUD_HEIGHT + 14.0)
+	map_toast_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	map_toast_panel.visible = false
+	fixed_hud_layer.add_child(map_toast_panel)
+	map_toast_label = UITheme.make_label("", 22, Color("#fff9ee"), UITheme.FontRole.BOLD)
+	map_toast_label.name = "MapToastLabel"
+	map_toast_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	map_toast_label.offset_left = 24.0
+	map_toast_label.offset_right = -24.0
+	map_toast_label.offset_top = 12.0
+	map_toast_label.offset_bottom = -12.0
+	map_toast_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	map_toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	map_toast_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	map_toast_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	map_toast_panel.add_child(map_toast_label)
+
+	stamina_tick_timer = Timer.new()
+	stamina_tick_timer.name = "StaminaTickTimer"
+	stamina_tick_timer.wait_time = 1.0
+	stamina_tick_timer.timeout.connect(_refresh_stamina_ui)
+	add_child(stamina_tick_timer)
+	stamina_tick_timer.start()
+
+func _refresh_stamina_ui() -> void:
+	if stamina_label == null:
+		return
+	var current: int = GameManager.get_stamina()
+	if current >= GameBalance.STAMINA_MAX:
+		stamina_label.text = LanguageManager.tf("map.stamina_full", [current, GameBalance.STAMINA_MAX])
+	else:
+		var remaining: int = GameManager.get_stamina_regen_remaining_seconds()
+		stamina_label.text = LanguageManager.tf("map.stamina_countdown", [current, GameBalance.STAMINA_MAX, remaining / 60, remaining % 60])
+	if watch_ad_stamina_button != null:
+		watch_ad_stamina_button.disabled = current >= GameBalance.STAMINA_MAX or not _can_watch_stamina_ad()
+
+func _can_watch_stamina_ad() -> bool:
+	if OS.is_debug_build():
+		# Desktop/web builds have no native ad SDK; debug builds keep the
+		# button enabled and grant the refill directly so the flow stays
+		# exercisable. Release iOS builds require the real rewarded ad.
+		return true
+	var ad_service: Node = get_node_or_null("/root/RewardedAdService") as Node
+	return ad_service != null and ad_service.has_method("is_available") and bool(ad_service.call("is_available"))
+
+func _on_watch_ad_stamina_pressed() -> void:
+	AudioManager.play_sfx("button_click")
+	if GameManager.get_stamina() >= GameBalance.STAMINA_MAX:
+		_refresh_stamina_ui()
+		_show_map_toast(LanguageManager.t("map.toast_stamina_full"))
+		return
+	var ad_service: Node = get_node_or_null("/root/RewardedAdService") as Node
+	var ad_ready: bool = ad_service != null and ad_service.has_method("is_available") and bool(ad_service.call("is_available"))
+	if ad_ready:
+		if ad_service.has_method("request_reward") and bool(ad_service.call("request_reward", RewardedAdService.REWARD_KIND_STAMINA)):
+			_show_map_toast(LanguageManager.tf("map.toast_watch_ad", [GameBalance.STAMINA_AD_REWARD]))
+			return
+		_refresh_stamina_ui()
+		_show_map_toast(LanguageManager.t("map.toast_ad_not_ready"))
+		return
+	if OS.is_debug_build():
+		var granted: bool = GameManager.add_stamina(GameBalance.STAMINA_AD_REWARD)
+		_refresh_progress()
+		_refresh_stamina_ui()
+		if granted:
+			_show_map_toast(LanguageManager.tf("map.toast_ad_reward_debug", [GameBalance.STAMINA_AD_REWARD]))
+		else:
+			_show_map_toast(LanguageManager.t("map.toast_stamina_full"))
+		return
+	_refresh_stamina_ui()
+	_show_map_toast(LanguageManager.t("map.toast_ad_not_ready"))
+
+func _show_map_toast(message: String) -> void:
+	if map_toast_panel == null or map_toast_label == null:
+		return
+	map_toast_label.text = message
+	map_toast_panel.modulate.a = 1.0
+	map_toast_panel.visible = true
+	if map_toast_tween != null and map_toast_tween.is_valid():
+		map_toast_tween.kill()
+	map_toast_tween = create_tween()
+	map_toast_tween.tween_interval(2.4)
+	map_toast_tween.tween_property(map_toast_panel, "modulate:a", 0.0, 0.3)
+	map_toast_tween.tween_callback(func() -> void: map_toast_panel.visible = false)
+
 func _refresh_progress() -> void:
+	_refresh_stamina_ui()
 	if stats_label != null:
 		var currency_digits: int = maxi(str(GameManager.get_gems()).length(), str(GameManager.get_coins()).length())
 		var stats_font_size: int = 25
@@ -518,9 +705,9 @@ func _refresh_progress() -> void:
 			if GameManager.is_stage_completed(stage_id):
 				completed_count += 1
 				chapter_stars += GameManager.get_stage_stars(stage_id)
-		stats_label.text = "LV.%d   HP %d   ATK %d   DEF %d   GEMS %d   金幣 %d   進度 %d/%d   星星 %d" % [GameManager.get_level(), GameManager.get_max_hp(), GameManager.get_attack(), GameManager.get_defense(), GameManager.get_gems(), GameManager.get_coins(), completed_count, world_stages.size(), chapter_stars]
+		stats_label.text = LanguageManager.tf("map.stats", [GameManager.get_level(), GameManager.get_max_hp(), GameManager.get_attack(), GameManager.get_defense(), GameManager.get_gems(), GameManager.get_coins(), completed_count, world_stages.size(), chapter_stars])
 	if chapter_label != null:
-		chapter_label.text = "第%d章" % current_chapter
+		chapter_label.text = LanguageManager.tf("map.chapter", [current_chapter])
 	if world_name_label != null:
 		world_name_label.text = _world_name_for_chapter(current_chapter)
 
@@ -533,6 +720,11 @@ func _refresh_chapter_navigation() -> void:
 
 func _on_stage_selected(stage_id: int) -> void:
 	if not GameManager.is_stage_unlocked(stage_id):
+		return
+	if GameManager.get_stamina() < GameBalance.STAMINA_PER_STAGE:
+		AudioManager.play_sfx("button_click")
+		_refresh_stamina_ui()
+		_show_map_toast(LanguageManager.tf("map.toast_no_stamina", [GameBalance.STAMINA_AD_REWARD]))
 		return
 	AudioManager.play_sfx("button_click")
 	GameManager.start_stage(stage_id)
@@ -603,14 +795,14 @@ func _update_zone_label(map_y: float) -> void:
 	if zone_label == null:
 		return
 	if map_y < SEGMENT_HEIGHT:
-		zone_label.text = "星光丘"
+		zone_label.text = LanguageManager.t("map.zone.starlight_hill")
 	elif map_y < SEGMENT_HEIGHT * 2.0:
-		zone_label.text = "櫻林"
+		zone_label.text = LanguageManager.t("map.zone.sakura_woods")
 	else:
-		zone_label.text = "花野"
+		zone_label.text = LanguageManager.t("map.zone.flower_meadow")
 
 func _world_name_for_chapter(chapter: int) -> String:
-	return "花漾原野" if chapter <= 1 else "花漾原野・第%d章" % chapter
+	return LanguageManager.t("map.world_name") if chapter <= 1 else LanguageManager.tf("map.world_name_chapter", [chapter])
 
 func _highest_unlocked_stage_on_page() -> int:
 	if world_stages.is_empty():

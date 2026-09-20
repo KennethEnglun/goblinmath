@@ -1,17 +1,13 @@
 class_name EquipmentSystem
 extends RefCounted
 
-## Pure helpers for item instances, equipment stats, drops, upgrades, and selling.
+## Pure helpers for item instances, equipment stats, merges, upgrades, and selling.
 const SLOTS: Array[String] = ["weapon", "head", "body"]
 const FLAT_STATS: Array[String] = ["attack", "max_hp", "defense", "luck"]
 const PERCENT_STATS: Array[String] = ["exp_bonus", "coin_bonus"]
 const RARITY_ORDER: Array[String] = ["common", "uncommon", "rare", "epic", "legendary"]
-const DROP_RARITIES: Array[String] = ["common", "uncommon", "rare", "epic"]
 const MAX_EXACT_UPGRADE_REBUILD_LEVEL: int = 100_000
 const MAX_SAFE_COIN_TOTAL: int = 9_000_000_000_000_000_000
-
-static func starter_item() -> Dictionary:
-	return create_instance("twig_club", "item_1", 1, 0)
 
 static func create_instance(template_id: String, uid: String, item_level: int = 1, acquired_stage: int = 1, upgrade_coins_spent: int = 0) -> Dictionary:
 	if uid.is_empty() or DataManager.get_equipment(template_id).is_empty():
@@ -176,50 +172,11 @@ static func sell_value(item: Dictionary) -> int:
 		return 0
 	return GameBalance.equipment_sell_value(int(item.get("level", 1)), str(template.get("rarity", "common")))
 
-static func roll_drop(stage_id: int, luck: int, victory_serial: int, pity: int, guaranteed: bool = false) -> Dictionary:
-	var safe_stage: int = clampi(stage_id, 1, GameBalance.MAX_STAGE_ID)
-	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
-	rng.seed = _drop_seed(safe_stage, victory_serial, pity)
-	var drop_chance: float = clampf(0.22 + (float(maxi(0, luck)) * 0.003) + (float(maxi(0, pity)) * 0.18), 0.22, 0.92)
-	if not guaranteed and rng.randf() > drop_chance:
-		return {}
-
-	var chapter: int = GameBalance.chapter_for_stage(safe_stage)
-	var progression_bonus: float = minf(0.18, float(chapter - 1) * 0.004)
-	var luck_bonus: float = minf(0.15, float(maxi(0, luck)) * 0.002)
-	var rarity_roll: float = rng.randf()
-	var rarity: String = "common"
-	var epic_chance: float = 0.015 + progression_bonus * 0.35 + luck_bonus * 0.4
-	var rare_chance: float = 0.10 + progression_bonus + luck_bonus
-	var uncommon_chance: float = 0.28 + progression_bonus
-	if rarity_roll < epic_chance:
-		rarity = "epic"
-	elif rarity_roll < epic_chance + rare_chance:
-		rarity = "rare"
-	elif rarity_roll < epic_chance + rare_chance + uncommon_chance:
-		rarity = "uncommon"
-
-	var pool: Array = _templates_for_drop(safe_stage, rarity)
-	if pool.is_empty():
-		for fallback_rarity: String in DROP_RARITIES:
-			pool = _templates_for_drop(safe_stage, fallback_rarity)
-			if not pool.is_empty():
-				break
-	if pool.is_empty():
-		return {}
-	var template: Dictionary = pool[rng.randi_range(0, pool.size() - 1)]
-	var drop_level: int = maxi(1, int(floor(float(safe_stage - 1) / 5.0)) + 1)
-	return {
-		"template_id": str(template.get("id", "")),
-		"level": drop_level,
-		"acquired_stage": safe_stage
-	}
-
 static func describe_item(item: Dictionary) -> String:
 	var template: Dictionary = get_item_template(item)
 	if template.is_empty():
-		return "未知裝備"
-	return "%s  Lv.%d" % [str(template.get("name_zh", template.get("name", "裝備"))), int(item.get("level", 1))]
+		return LanguageManager.t("common.unknown_item")
+	return "%s  Lv.%d" % [LanguageManager.pick(template), int(item.get("level", 1))]
 
 static func rarity_color(rarity: String) -> Color:
 	match rarity:
@@ -446,22 +403,6 @@ static func _equipped_slot(state: Dictionary, uid: String) -> String:
 		if str((equipped as Dictionary).get(slot, "")) == uid:
 			return slot
 	return ""
-
-static func _templates_for_drop(stage_id: int, rarity: String) -> Array:
-	var result: Array = []
-	for template: Dictionary in DataManager.get_all_equipment():
-		if str(template.get("rarity", "common")) != rarity:
-			continue
-		if int(template.get("min_stage", 1)) > stage_id:
-			continue
-		if not SLOTS.has(str(template.get("slot", ""))):
-			continue
-		result.append(template)
-	return result
-
-static func _drop_seed(stage_id: int, victory_serial: int, pity: int) -> int:
-	var seed_value: int = (int(stage_id) * 1_103_515_245) + (maxi(0, victory_serial) * 12_345) + (maxi(0, pity) * 97_531) + 7_919
-	return absi(seed_value)
 
 static func _empty_stats() -> Dictionary:
 	return {

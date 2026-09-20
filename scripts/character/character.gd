@@ -48,11 +48,7 @@ const ICON_PATHS: Dictionary = {
 }
 
 const SLOT_ORDER: Array[String] = ["weapon", "head", "body"]
-const SLOT_NAMES: Dictionary = {
-	"weapon": {"primary": "WEAPON", "secondary": "武器"},
-	"head": {"primary": "HEAD", "secondary": "頭部"},
-	"body": {"primary": "BODY", "secondary": "身體"}
-}
+const STAT_EN_ABBREVS: Dictionary = {"attack": "ATK", "max_hp": "HP", "defense": "DEF", "luck": "LUCK"}
 const SLOT_ICON_PATHS: Dictionary = {
 	"weapon": "res://assets/equipment/icons/equipment_weapon_v1.png",
 	"head": "res://assets/equipment/icons/equipment_head_v1.png",
@@ -67,6 +63,7 @@ var character_bottom_offset: float = 64.0
 var scroll_drag_active: bool = false
 var scroll_dragged: bool = false
 var scroll_drag_pointer_id: int = -1
+var scroll_drag_horizontal: bool = false
 var scroll_drag_start_position: Vector2 = Vector2.ZERO
 var scroll_drag_last_position: Vector2 = Vector2.ZERO
 var scroll_drag_scroll: ScrollContainer
@@ -83,6 +80,7 @@ var character_action_layer: Control
 var character_equipment_layer: Control
 var character_selector_layer: Control
 var character_selector_panel: Panel
+var card_scroll: ScrollContainer
 var character_card_row: HBoxContainer
 var purchase_confirm_layer: Control
 var purchase_confirm_label: Label
@@ -124,8 +122,13 @@ func _ready() -> void:
 	call_deferred("_play_page_entrance")
 
 func _input(event: InputEvent) -> void:
-	if character_selector_layer != null and character_selector_layer.visible:
+	# While the purchase confirmation sits on top of the selector, drags must
+	# not reach the card rail underneath.
+	if character_selector_layer != null and character_selector_layer.visible and purchase_confirm_layer != null and purchase_confirm_layer.visible:
+		_clear_scroll_drag()
 		return
+	# _get_active_scroll() hands drags to the selector's horizontal card rail
+	# while it is open; otherwise they control the active tab's vertical scroll.
 	var active_scroll: ScrollContainer = _get_active_scroll()
 	if active_scroll == null or not is_instance_valid(active_scroll):
 		return
@@ -222,23 +225,23 @@ func _build_hud() -> void:
 	header.size = Vector2(992, 128)
 	character_hud_layer.add_child(header)
 
-	var back_button: Button = _make_small_button("地圖\nMAP", Color("#e7f1e8"), Vector2(120, 124), ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["map"]))
+	var back_button: Button = _make_small_button_tr("char.back", Color("#e7f1e8"), Vector2(120, 124), ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["map"]))
 	back_button.name = "BackToMapButton"
 	back_button.position = Vector2(0, 0)
 	back_button.pressed.connect(_on_back_pressed)
 	header.add_child(back_button)
 
-	var title: VBoxContainer = UITheme.make_zh_en_label("角色", "CHARACTER", 38, 14, UITheme.INK)
+	var title: VBoxContainer = UITheme.make_tr_dual("char.title", 38, 14, UITheme.INK)
 	title.name = "CharacterTitle"
 	title.position = Vector2(136, 8)
 	title.size = Vector2(240, 104)
 	header.add_child(title)
-	var gacha_button: Button = _make_small_button("轉蛋\nGACHA", Color("#eadff8"), Vector2(118, 124), ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["gacha"]))
+	var gacha_button: Button = _make_small_button_tr("char.gacha", Color("#eadff8"), Vector2(118, 124), ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["gacha"]))
 	gacha_button.name = "GachaButton"
 	gacha_button.position = Vector2(392, 0)
 	gacha_button.pressed.connect(_on_gacha_pressed)
 	header.add_child(gacha_button)
-	var merge_button: Button = _make_small_button("合成\nMERGE", Color("#d9ead8"), Vector2(118, 124), ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["merge"]))
+	var merge_button: Button = _make_small_button_tr("char.merge", Color("#d9ead8"), Vector2(118, 124), ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["merge"]))
 	merge_button.name = "MergeButton"
 	merge_button.position = Vector2(522, 0)
 	merge_button.pressed.connect(_on_merge_pressed)
@@ -287,13 +290,13 @@ func _build_tabs() -> void:
 	tab_bar.add_theme_constant_override("separation", 14)
 	character_tab_layer.add_child(tab_bar)
 	var tab_specs: Array = [
-		[TAB_PROFILE, "角色\nPROFILE", Color("#f4bec9"), ICON_PATHS["profile"]],
-		[TAB_EQUIPMENT, "裝備\nEQUIPMENT", Color("#f7efe0"), ICON_PATHS["equipment"]],
-		[TAB_BAG, "背包\nBAG", Color("#f7efe0"), ICON_PATHS["bag"]]
+		[TAB_PROFILE, "char.tab_profile", Color("#f4bec9"), ICON_PATHS["profile"]],
+		[TAB_EQUIPMENT, "char.tab_equipment", Color("#f7efe0"), ICON_PATHS["equipment"]],
+		[TAB_BAG, "char.tab_bag", Color("#f7efe0"), ICON_PATHS["bag"]]
 	]
 	for spec: Array in tab_specs:
 		var tab_id: String = str(spec[0])
-		var button: Button = _make_small_button(str(spec[1]), spec[2], Vector2(0, 116), TAB_SKIN_PATH, str(spec[3]))
+		var button: Button = _make_small_button_tr(str(spec[1]), spec[2], Vector2(0, 116), TAB_SKIN_PATH, str(spec[3]))
 		button.name = "%sTabButton" % tab_id.capitalize()
 		button.toggle_mode = true
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -315,7 +318,7 @@ func _build_tab_contents() -> void:
 	profile_content = _make_stack("ProfileContent")
 	profile_scroll.add_child(profile_content)
 	profile_content.add_child(UITheme.make_spacer(340))
-	choose_character_button = _make_small_button("選擇主角\nCHOOSE HERO", Color("#f5d9df"), Vector2(0, 104), ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["profile"]))
+	choose_character_button = _make_small_button_tr("char.choose_hero", Color("#f5d9df"), Vector2(0, 104), ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["profile"]))
 	choose_character_button.name = "OpenCharacterSelectorButton"
 	choose_character_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	choose_character_button.pressed.connect(_on_open_character_selector_pressed)
@@ -331,12 +334,12 @@ func _build_tab_contents() -> void:
 	character_equipment_layer.name = "CharacterEquipmentLayer"
 	character_equipment_layer.add_theme_constant_override("separation", 14)
 	equipment_content.add_child(character_equipment_layer)
-	character_equipment_layer.add_child(UITheme.make_zh_en_label("目前裝備", "EQUIPPED GEAR", 30, 14, UITheme.INK))
+	character_equipment_layer.add_child(UITheme.make_tr_dual("char.equipped_gear", 30, 14, UITheme.INK))
 	equipment_row = HBoxContainer.new()
 	equipment_row.name = "EquipmentSlotRow"
 	equipment_row.add_theme_constant_override("separation", 14)
 	character_equipment_layer.add_child(equipment_row)
-	var bag_button: Button = _make_small_button("前往背包\nOPEN BAG", Color("#f5d88d"), Vector2(0, 112), ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["bag"]))
+	var bag_button: Button = _make_small_button_tr("char.open_bag", Color("#f5d88d"), Vector2(0, 112), ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["bag"]))
 	bag_button.name = "OpenBagButton"
 	bag_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bag_button.pressed.connect(set_active_tab.bind(TAB_BAG))
@@ -374,7 +377,7 @@ func _build_tab_contents() -> void:
 	header_tools.position = Vector2(286, 0)
 	header_tools.size = Vector2(670, 96)
 	bag_header_row.add_child(header_tools)
-	var items_label: Label = UITheme.make_label("裝備清單\nINVENTORY", 22, UITheme.MUTED_INK, UITheme.FontRole.BOLD)
+	var items_label: Label = UITheme.make_tr_label("char.inventory_title", 22, UITheme.MUTED_INK, UITheme.FontRole.BOLD)
 	items_label.name = "BagItemsLabel"
 	items_label.position = Vector2(126, 0)
 	items_label.size = Vector2(292, 96)
@@ -382,7 +385,7 @@ func _build_tab_contents() -> void:
 	items_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	items_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	header_tools.add_child(items_label)
-	inventory_sort_button = _make_small_button("整理\n稀有度", Color("#e7f1e8"), Vector2(224, 96), ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["sort"]))
+	inventory_sort_button = _make_small_button_tr("char.sort", Color("#e7f1e8"), Vector2(224, 96), ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["sort"]))
 	inventory_sort_button.name = "InventorySortButton"
 	inventory_sort_button.position = Vector2(446, 0)
 	inventory_sort_button.size = Vector2(224, 96)
@@ -442,38 +445,39 @@ func _build_character_selector() -> void:
 	header.custom_minimum_size = Vector2(0, 112)
 	header.add_theme_constant_override("separation", 12)
 	stack.add_child(header)
-	var title: VBoxContainer = UITheme.make_zh_en_label("選擇主角", "CHOOSE YOUR HERO", 34, 14, UITheme.INK)
+	var title: VBoxContainer = UITheme.make_tr_dual("char.choose_hero", 34, 14, UITheme.INK)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title)
 	character_selector_currency_label = UITheme.make_label("", 21, Color("#9b6d31"), UITheme.FontRole.BOLD)
 	character_selector_currency_label.name = "CharacterSelectorCurrencyLabel"
 	character_selector_currency_label.custom_minimum_size = Vector2(190, 96)
 	header.add_child(character_selector_currency_label)
-	var close_button: Button = _make_small_button("關閉\nCLOSE", Color("#f1e4df"), Vector2(140, 96), ACTION_BUTTON_SKIN_PATH, "")
+	var close_button: Button = _make_small_button_tr("char.close", Color("#f1e4df"), Vector2(140, 96), ACTION_BUTTON_SKIN_PATH, "")
 	close_button.name = "CloseCharacterSelectorButton"
 	close_button.pressed.connect(_on_close_character_selector_pressed)
 	header.add_child(close_button)
 
-	var intro: Label = UITheme.make_label("角色共享等級、配點與裝備；選中的主角會提供專屬能力加成。", 20, UITheme.MUTED_INK)
+	var intro: Label = UITheme.make_tr_label("char.selector_intro", 20, UITheme.MUTED_INK)
 	intro.custom_minimum_size = Vector2(0, 62)
 	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	stack.add_child(intro)
 
-	var card_scroll: ScrollContainer = ScrollContainer.new()
-	card_scroll.name = "CharacterCardScroll"
-	card_scroll.custom_minimum_size = Vector2(0, 670)
-	card_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	card_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	card_scroll.scroll_deadzone = 18
-	card_scroll.follow_focus = true
-	UITheme.apply_scrollbar_skin(card_scroll, Color("#d9a85c"))
-	stack.add_child(card_scroll)
+	var card_scroll_inner: ScrollContainer = ScrollContainer.new()
+	card_scroll_inner.name = "CharacterCardScroll"
+	card_scroll_inner.custom_minimum_size = Vector2(0, 670)
+	card_scroll_inner.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	card_scroll_inner.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	card_scroll_inner.scroll_deadzone = 18
+	card_scroll_inner.follow_focus = true
+	UITheme.apply_scrollbar_skin(card_scroll_inner, Color("#d9a85c"))
+	stack.add_child(card_scroll_inner)
+	card_scroll = card_scroll_inner
 	character_card_row = HBoxContainer.new()
 	character_card_row.name = "CharacterCardRow"
 	character_card_row.add_theme_constant_override("separation", 14)
 	card_scroll.add_child(character_card_row)
 
-	var hint: Label = UITheme.make_label("左右滑動查看更多角色  ·  購買後永久解鎖", 19, UITheme.MUTED_INK, UITheme.FontRole.BOLD)
+	var hint: Label = UITheme.make_tr_label("char.selector_hint", 19, UITheme.MUTED_INK, UITheme.FontRole.BOLD)
 	hint.custom_minimum_size = Vector2(0, 54)
 	stack.add_child(hint)
 	_build_purchase_confirmation()
@@ -500,7 +504,7 @@ func _build_purchase_confirmation() -> void:
 	var stack: VBoxContainer = VBoxContainer.new()
 	stack.add_theme_constant_override("separation", 18)
 	margin.add_child(stack)
-	stack.add_child(UITheme.make_zh_en_label("確認解鎖", "UNLOCK HERO", 31, 14, UITheme.INK))
+	stack.add_child(UITheme.make_tr_dual("char.unlock_hero", 31, 14, UITheme.INK))
 	purchase_confirm_label = UITheme.make_label("", 23, UITheme.MUTED_INK, UITheme.FontRole.BOLD)
 	purchase_confirm_label.name = "CharacterPurchaseConfirmLabel"
 	purchase_confirm_label.custom_minimum_size = Vector2(0, 170)
@@ -509,12 +513,12 @@ func _build_purchase_confirmation() -> void:
 	var actions: HBoxContainer = HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 16)
 	stack.add_child(actions)
-	var cancel_button: Button = _make_small_button("取消\nCANCEL", Color("#eee6df"), Vector2(0, 104), ACTION_BUTTON_SKIN_PATH, "")
+	var cancel_button: Button = _make_small_button_tr("char.cancel", Color("#eee6df"), Vector2(0, 104), ACTION_BUTTON_SKIN_PATH, "")
 	cancel_button.name = "CancelCharacterPurchaseButton"
 	cancel_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cancel_button.pressed.connect(_on_cancel_character_purchase_pressed)
 	actions.add_child(cancel_button)
-	var confirm_button: Button = _make_small_button("確認解鎖\nUNLOCK", Color("#f6c7cf"), Vector2(0, 104), ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["profile"]))
+	var confirm_button: Button = _make_small_button_tr("char.unlock", Color("#f6c7cf"), Vector2(0, 104), ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["profile"]))
 	confirm_button.name = "ConfirmCharacterPurchaseButton"
 	confirm_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	confirm_button.pressed.connect(_on_confirm_character_purchase_pressed)
@@ -541,7 +545,8 @@ func _make_character_card(character: Dictionary) -> Panel:
 	portrait.custom_minimum_size = Vector2(250, 250)
 	portrait.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	stack.add_child(portrait)
-	var name_label: VBoxContainer = UITheme.make_zh_en_label(str(character.get("name_zh", "主角")), str(character.get("name", "HERO")), 25, 12, UITheme.INK)
+	var card_name_secondary: String = str(character.get("name", "HERO")) if LanguageManager.get_language() == LanguageManager.LANGUAGE_ZH_TW else ""
+	var name_label: VBoxContainer = UITheme.make_pair_stack(LanguageManager.pick(character), card_name_secondary, 25, 12, UITheme.INK, true)
 	name_label.custom_minimum_size = Vector2(0, 72)
 	stack.add_child(name_label)
 	var bonus_label: Label = UITheme.make_label(_format_character_bonus(character.get("bonuses", {})), 18, UITheme.MUTED_INK, UITheme.FontRole.BOLD)
@@ -550,14 +555,14 @@ func _make_character_card(character: Dictionary) -> Panel:
 	bonus_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	stack.add_child(bonus_label)
 	var price: int = GameManager.get_effective_character_price(character_id)
-	var price_text: String = "使用中" if selected else ("已擁有" if unlocked else "%d 鑽石" % price)
+	var price_text: String = LanguageManager.t("char.selected") if selected else (LanguageManager.t("char.owned") if unlocked else LanguageManager.tf("char.price_gems", [price]))
 	if not unlocked and price == 0 and DataManager.is_character_test_price_enabled():
-		price_text = "測試免費 · 0 鑽石"
+		price_text = LanguageManager.t("char.free_test")
 	var price_label: Label = UITheme.make_label(price_text, 19, Color("#9b6d31"), UITheme.FontRole.BOLD)
 	price_label.name = "CharacterCardPrice_%s" % character_id
 	price_label.custom_minimum_size = Vector2(0, 42)
 	stack.add_child(price_label)
-	var action_text: String = "使用中\nSELECTED" if selected else ("使用角色\nSELECT" if unlocked else "購買並使用\nUNLOCK")
+	var action_text: String = LanguageManager.t("char.selected_action") if selected else (LanguageManager.t("char.select") if unlocked else LanguageManager.t("char.unlock_action"))
 	var action_color: Color = Color("#eadfd8") if selected else (Color("#dcebdc") if unlocked else Color("#f6c7cf"))
 	var action_button: Button = _make_small_button(action_text, action_color, Vector2(250, 98), ACTION_BUTTON_SKIN_PATH, "")
 	action_button.name = "CharacterAction_%s" % character_id
@@ -569,21 +574,21 @@ func _make_character_card(character: Dictionary) -> Panel:
 func _refresh_character_selector() -> void:
 	if character_card_row == null:
 		return
-	character_selector_currency_label.text = "%d 鑽石\nGEMS" % GameManager.get_gems()
+	character_selector_currency_label.text = LanguageManager.tf("char.selector_currency", [GameManager.get_gems()])
 	_clear_children(character_card_row)
 	for character: Dictionary in GameManager.get_all_characters():
 		character_card_row.add_child(_make_character_card(character))
 
 func _format_character_bonus(raw_bonuses: Variant) -> String:
 	if not raw_bonuses is Dictionary:
-		return "無額外加成"
+		return LanguageManager.t("char.no_bonus")
 	var bonuses: Dictionary = raw_bonuses as Dictionary
 	var parts: PackedStringArray = []
 	for spec: Array in [["attack", "ATK"], ["max_hp", "HP"], ["defense", "DEF"], ["luck", "LUCK"]]:
 		var value: int = maxi(0, int(bonuses.get(str(spec[0]), 0)))
 		if value > 0:
 			parts.append("%s +%d" % [str(spec[1]), value])
-	return "無額外加成" if parts.is_empty() else "  ·  ".join(parts)
+	return LanguageManager.t("char.no_bonus") if parts.is_empty() else "  ·  ".join(parts)
 
 func _on_open_character_selector_pressed() -> void:
 	pending_character_purchase_id = ""
@@ -601,12 +606,13 @@ func _on_open_character_selector_pressed() -> void:
 func _on_close_character_selector_pressed() -> void:
 	pending_character_purchase_id = ""
 	purchase_confirm_layer.visible = false
+	_clear_scroll_drag()
 	character_selector_layer.visible = false
 
 func _on_character_card_action_pressed(character_id: String) -> void:
 	if GameManager.is_character_unlocked(character_id):
 		if GameManager.select_character(character_id):
-			_refresh_all("已選用 %s" % str(GameManager.get_selected_character().get("name_zh", "主角")))
+			_refresh_all(LanguageManager.tf("char.toast_selected", [LanguageManager.pick(GameManager.get_selected_character())]))
 			_refresh_character_selector()
 		return
 	var character: Dictionary = DataManager.get_character(character_id)
@@ -614,8 +620,8 @@ func _on_character_card_action_pressed(character_id: String) -> void:
 		return
 	pending_character_purchase_id = character_id
 	var price: int = GameManager.get_effective_character_price(character_id)
-	var price_text: String = "測試期間免費（0 鑽石）" if price == 0 and DataManager.is_character_test_price_enabled() else "%d 鑽石" % price
-	purchase_confirm_label.text = "解鎖「%s」並立即使用？\n費用：%s\n目前持有：%d 鑽石" % [str(character.get("name_zh", "主角")), price_text, GameManager.get_gems()]
+	var price_text: String = LanguageManager.t("char.free_test_confirm") if price == 0 and DataManager.is_character_test_price_enabled() else LanguageManager.tf("char.price_gems", [price])
+	purchase_confirm_label.text = LanguageManager.tf("char.unlock_confirm_text", [LanguageManager.pick(character), price_text, GameManager.get_gems()])
 	purchase_confirm_layer.visible = true
 
 func _on_cancel_character_purchase_pressed() -> void:
@@ -628,11 +634,11 @@ func _on_confirm_character_purchase_pressed() -> void:
 	var result: Dictionary = GameManager.purchase_character(pending_character_purchase_id)
 	if not bool(result.get("success", false)):
 		var reason: String = str(result.get("reason", "purchase_failed"))
-		message_label.text = "鑽石不足" if reason == "not_enough_gems" else "無法解鎖角色"
+		message_label.text = LanguageManager.t("char.not_enough_gems") if reason == "not_enough_gems" else LanguageManager.t("char.unlock_failed")
 		return
 	pending_character_purchase_id = ""
 	purchase_confirm_layer.visible = false
-	_refresh_all("角色已解鎖並選用")
+	_refresh_all(LanguageManager.t("char.unlocked_and_selected"))
 	_refresh_character_selector()
 
 func _make_profile_summary() -> Panel:
@@ -659,7 +665,7 @@ func _make_profile_summary() -> Panel:
 	exp_progress.add_theme_stylebox_override("background", UITheme.rounded_style(Color("#f5ded7"), Color("#d9a59d"), 9, 2))
 	exp_progress.add_theme_stylebox_override("fill", UITheme.rounded_style(Color("#f29eaa"), Color.TRANSPARENT, 9, 0))
 	stack.add_child(exp_progress)
-	stack.add_child(UITheme.make_zh_en_label("能力總覽", "STATS", 24, 12, UITheme.INK))
+	stack.add_child(UITheme.make_tr_dual("char.stats_title", 24, 12, UITheme.INK))
 	var grid: GridContainer = GridContainer.new()
 	grid.name = "ProfileStatGrid"
 	grid.columns = 2
@@ -667,15 +673,15 @@ func _make_profile_summary() -> Panel:
 	grid.add_theme_constant_override("v_separation", 10)
 	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	stack.add_child(grid)
-	for spec: Array in [["attack", "攻擊", "ATK"], ["max_hp", "生命", "HP"], ["defense", "防禦", "DEF"], ["luck", "幸運", "LUCK"]]:
-		grid.add_child(_make_stat_summary_tile(str(spec[0]), str(spec[1]), str(spec[2])))
+	for spec: Array in [["attack", "char.stat_attack"], ["max_hp", "char.stat_hp"], ["defense", "char.stat_defense"], ["luck", "char.stat_luck"]]:
+		grid.add_child(_make_stat_summary_tile(str(spec[0]), str(spec[1])))
 	stats_label = UITheme.make_label("", 1, Color.TRANSPARENT)
 	stats_label.name = "ProfileStatsLabel"
 	stats_label.visible = false
 	stack.add_child(stats_label)
 	return summary
 
-func _make_stat_summary_tile(stat: String, chinese: String, english: String) -> Panel:
+func _make_stat_summary_tile(stat: String, stat_key: String) -> Panel:
 	var tile: Panel = UITheme.make_panel(Color(1.0, 0.99, 0.95, 0.72), Color("#ead2b4"), 18, 2)
 	tile.name = "ProfileStat_%s" % stat
 	tile.custom_minimum_size = Vector2(0, 126)
@@ -695,8 +701,7 @@ func _make_stat_summary_tile(stat: String, chinese: String, english: String) -> 
 	value.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	tile.add_child(value)
 	stat_summary_labels[stat] = value
-	value.set_meta("zh", chinese)
-	value.set_meta("en", english)
+	value.set_meta("key", stat_key)
 	return tile
 
 func _make_profile_actions() -> Control:
@@ -712,7 +717,7 @@ func _make_profile_actions() -> Control:
 	var stack: VBoxContainer = VBoxContainer.new()
 	stack.add_theme_constant_override("separation", 12)
 	margin.add_child(stack)
-	stack.add_child(UITheme.make_zh_en_label("能力配點", "STAT POINTS", 28, 13, UITheme.INK))
+	stack.add_child(UITheme.make_tr_dual("char.stat_points_title", 28, 13, UITheme.INK))
 	points_label = UITheme.make_label("", 21, UITheme.MUTED_INK, UITheme.FontRole.BOLD)
 	points_label.name = "StatPointsLabel"
 	points_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -726,10 +731,10 @@ func _make_profile_actions() -> Control:
 	grid.add_theme_constant_override("h_separation", 12)
 	grid.add_theme_constant_override("v_separation", 12)
 	stack.add_child(grid)
-	_add_stat_button(grid, "攻擊 +1\nATK", "attack")
-	_add_stat_button(grid, "生命 +3\nMAX HP", "max_hp")
-	_add_stat_button(grid, "防禦 +1\nDEF", "defense")
-	_add_stat_button(grid, "幸運 +1\nLUCK", "luck")
+	_add_stat_button(grid, "char.stat_button_attack", "attack")
+	_add_stat_button(grid, "char.stat_button_hp", "max_hp")
+	_add_stat_button(grid, "char.stat_button_defense", "defense")
+	_add_stat_button(grid, "char.stat_button_luck", "luck")
 	return layer
 
 func _make_equipment_summary_panel() -> Panel:
@@ -743,20 +748,19 @@ func _make_equipment_summary_panel() -> Panel:
 	stack.alignment = BoxContainer.ALIGNMENT_CENTER
 	stack.add_theme_constant_override("separation", 8)
 	margin.add_child(stack)
-	stack.add_child(UITheme.make_zh_en_label("裝備加成", "EQUIPMENT BONUS", 25, 12, UITheme.INK))
+	stack.add_child(UITheme.make_tr_dual("char.equipment_bonus_title", 25, 12, UITheme.INK))
 	var grid: GridContainer = GridContainer.new()
 	grid.name = "EquipmentBonusGrid"
 	grid.columns = 4
 	grid.add_theme_constant_override("h_separation", 10)
 	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	stack.add_child(grid)
-	for spec: Array in [["attack", "攻擊", "ATK"], ["max_hp", "生命", "HP"], ["defense", "防禦", "DEF"], ["luck", "幸運", "LUCK"]]:
+	for spec: Array in [["attack", "char.stat_attack"], ["max_hp", "char.stat_hp"], ["defense", "char.stat_defense"], ["luck", "char.stat_luck"]]:
 		var value: Label = UITheme.make_label("", 20, UITheme.MUTED_INK, UITheme.FontRole.BOLD)
 		value.name = "EquipmentBonus_%s" % str(spec[0])
 		value.custom_minimum_size = Vector2(0, 66)
 		value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		value.set_meta("zh", str(spec[1]))
-		value.set_meta("en", str(spec[2]))
+		value.set_meta("key", str(spec[1]))
 		grid.add_child(value)
 		equipment_bonus_values[str(spec[0])] = value
 	equipment_bonus_label = UITheme.make_label("", 1, Color.TRANSPARENT)
@@ -787,6 +791,8 @@ func _make_stack(stack_name: String) -> VBoxContainer:
 	return stack
 
 func _get_active_scroll() -> ScrollContainer:
+	if character_selector_layer != null and character_selector_layer.visible and card_scroll != null:
+		return card_scroll
 	match active_tab:
 		TAB_PROFILE:
 			return profile_scroll
@@ -802,6 +808,7 @@ func _begin_scroll_drag(position: Vector2, pointer_id: int, scroll: ScrollContai
 	scroll_drag_active = true
 	scroll_dragged = false
 	scroll_drag_pointer_id = pointer_id
+	scroll_drag_horizontal = scroll == card_scroll
 	scroll_drag_start_position = position
 	scroll_drag_last_position = position
 	scroll_drag_scroll = scroll
@@ -814,10 +821,16 @@ func _update_scroll_drag(position: Vector2) -> void:
 	if not scroll_dragged:
 		scroll_drag_last_position = position
 		return
-	var delta_y: float = position.y - scroll_drag_last_position.y
-	var bar: VScrollBar = scroll_drag_scroll.get_v_scroll_bar()
-	var max_scroll: int = maxi(0, int(ceil(bar.max_value - bar.page)))
-	scroll_drag_scroll.scroll_vertical = clampi(int(round(float(scroll_drag_scroll.scroll_vertical) - delta_y)), 0, max_scroll)
+	if scroll_drag_horizontal:
+		var delta_x: float = position.x - scroll_drag_last_position.x
+		var h_bar: HScrollBar = scroll_drag_scroll.get_h_scroll_bar()
+		var max_horizontal: int = maxi(0, int(ceil(h_bar.max_value - h_bar.page)))
+		scroll_drag_scroll.scroll_horizontal = clampi(int(round(float(scroll_drag_scroll.scroll_horizontal) - delta_x)), 0, max_horizontal)
+	else:
+		var delta_y: float = position.y - scroll_drag_last_position.y
+		var v_bar: VScrollBar = scroll_drag_scroll.get_v_scroll_bar()
+		var max_vertical: int = maxi(0, int(ceil(v_bar.max_value - v_bar.page)))
+		scroll_drag_scroll.scroll_vertical = clampi(int(round(float(scroll_drag_scroll.scroll_vertical) - delta_y)), 0, max_vertical)
 	scroll_drag_last_position = position
 	get_viewport().set_input_as_handled()
 
@@ -830,6 +843,7 @@ func _clear_scroll_drag() -> void:
 	scroll_drag_active = false
 	scroll_dragged = false
 	scroll_drag_pointer_id = -1
+	scroll_drag_horizontal = false
 	scroll_drag_start_position = Vector2.ZERO
 	scroll_drag_last_position = Vector2.ZERO
 	scroll_drag_scroll = null
@@ -927,8 +941,8 @@ func _refresh_all(message: String = "") -> void:
 	if level_label == null:
 		return
 	_refresh_character_portraits()
-	level_label.text = "等級 %d  ·  第 %d 章" % [GameManager.get_level(), GameBalance.chapter_for_stage(int(GameManager.player_state.get("unlocked_stage", 1)))]
-	exp_label.text = "經驗值 %d / %d  ·  EXP" % [GameManager.get_exp(), GameManager.get_required_exp()]
+	level_label.text = LanguageManager.tf("char.level_label", [GameManager.get_level(), GameBalance.chapter_for_stage(int(GameManager.player_state.get("unlocked_stage", 1)))])
+	exp_label.text = LanguageManager.tf("char.exp_label", [GameManager.get_exp(), GameManager.get_required_exp()])
 	exp_progress.max_value = maxf(1.0, float(GameManager.get_required_exp()))
 	exp_progress.value = minf(float(GameManager.get_exp()), exp_progress.max_value)
 	var stat_breakdown: Dictionary = GameManager.get_stat_breakdown()
@@ -936,12 +950,12 @@ func _refresh_all(message: String = "") -> void:
 	_refresh_stat_summary(stat_breakdown)
 	_refresh_stat_buttons(stat_breakdown)
 	if equipment_bonus_label != null:
-		equipment_bonus_label.text = "目前套用：%s" % _format_stats(GameManager.get_equipped_stats())
+		equipment_bonus_label.text = LanguageManager.tf("char.equipment_bonus_applied", [_format_stats(GameManager.get_equipped_stats())])
 		_refresh_equipment_bonus_grid(GameManager.get_equipped_stats())
 	var total_stat_points: int = GameManager.get_total_stat_points()
 	var available_stat_points: int = GameManager.get_stat_points()
-	points_label.text = "可用 %d 點  ·  累計獲得 %d 點" % [available_stat_points, total_stat_points]
-	inventory_count_label.text = "背包 %d / ∞\nBAG CAPACITY" % GameManager.get_inventory().size()
+	points_label.text = LanguageManager.tf("char.points_label", [available_stat_points, total_stat_points])
+	inventory_count_label.text = LanguageManager.tf("char.bag_capacity", [GameManager.get_inventory().size()])
 	var gems_text: String = str(GameManager.get_gems())
 	var coins_text: String = str(GameManager.get_coins())
 	var largest_currency_digits: int = maxi(gems_text.length(), coins_text.length())
@@ -951,10 +965,10 @@ func _refresh_all(message: String = "") -> void:
 	elif largest_currency_digits >= 9:
 		currency_font_size = 18
 	coin_label.add_theme_font_size_override("font_size", currency_font_size)
-	coin_label.text = "%s  鑽石\n%s  金幣" % [gems_text, coins_text]
+	coin_label.text = LanguageManager.tf("char.currency", [gems_text, coins_text])
 	if choose_character_button != null:
 		var selected_character: Dictionary = GameManager.get_selected_character()
-		UITheme.set_dual_button_text(choose_character_button, "選擇主角 · %s" % str(selected_character.get("name_zh", "主角")), "CHOOSE HERO")
+		UITheme.set_dual_button_text(choose_character_button, LanguageManager.tf("char.choose_hero_selected", [LanguageManager.pick(selected_character)]), LanguageManager.t("char.choose_hero_short"))
 	if message_label != null:
 		message_label.text = message
 	if character_toast_panel != null:
@@ -968,15 +982,17 @@ func _refresh_stat_summary(stat_breakdown: Dictionary) -> void:
 		var label: Label = stat_summary_labels[stat] as Label
 		var data: Dictionary = stat_breakdown.get(stat, {})
 		if label != null:
-			label.text = "%s %d  ·  %s\n等級 %d  +  加點 %d\n裝備 %d  +  角色 %d" % [
-				str(label.get_meta("zh", "")),
+			var summary_args: Array = [
+				LanguageManager.t(str(label.get_meta("key", ""))),
 				int(data.get("total", 0)),
-				str(label.get_meta("en", "")),
 				int(data.get("level", 0)),
 				int(data.get("allocated_value", 0)),
 				int(data.get("equipment", 0)),
 				int(data.get("character", 0))
 			]
+			if LanguageManager.get_language() == LanguageManager.LANGUAGE_ZH_TW:
+				summary_args.insert(2, str(STAT_EN_ABBREVS.get(stat, "STAT")))
+			label.text = LanguageManager.tf("char.stat_summary", summary_args)
 
 func _refresh_equipment_bonus_grid(stats: Dictionary) -> void:
 	for stat: String in equipment_bonus_values:
@@ -984,42 +1000,45 @@ func _refresh_equipment_bonus_grid(stats: Dictionary) -> void:
 		if label == null:
 			continue
 		var value: int = int(stats.get(stat, 0))
-		label.text = "%s +%d\n%s" % [str(label.get_meta("zh", "")), value, str(label.get_meta("en", ""))]
+		var tile_args: Array = [LanguageManager.t(str(label.get_meta("key", ""))), value]
+		if LanguageManager.get_language() == LanguageManager.LANGUAGE_ZH_TW:
+			tile_args.append(str(STAT_EN_ABBREVS.get(stat, "STAT")))
+		label.text = LanguageManager.tf("char.bonus_tile", tile_args)
 
 func _format_stat_breakdown(stat_breakdown: Dictionary) -> String:
-	var lines: PackedStringArray = ["能力總值 / 分拆"]
+	var lines: PackedStringArray = [LanguageManager.t("char.stat_breakdown_title")]
 	var specs: Array = [
-		["attack", "ATK", "攻擊"],
-		["max_hp", "HP", "生命"],
-		["defense", "DEF", "防禦"],
-		["luck", "LUCK", "幸運"]
+		["attack", "ATK", "char.stat_attack"],
+		["max_hp", "HP", "char.stat_hp"],
+		["defense", "DEF", "char.stat_defense"],
+		["luck", "LUCK", "char.stat_luck"]
 	]
 	for spec: Array in specs:
 		var stat: String = str(spec[0])
 		var data: Dictionary = stat_breakdown.get(stat, {})
-		lines.append("%s %d（等級 %d + 加點 %d + 裝備 %d + 角色 %d）" % [
+		lines.append(LanguageManager.tf("char.stat_breakdown_line", [
 			str(spec[1]),
 			int(data.get("total", 0)),
 			int(data.get("level", 0)),
 			int(data.get("allocated_value", 0)),
 			int(data.get("equipment", 0)),
 			int(data.get("character", 0))
-		])
+		]))
 	return "\n".join(lines)
 
 func _refresh_stat_buttons(stat_breakdown: Dictionary) -> void:
 	var specs: Array = [
-		["attack", "攻擊 %d", "ATK · +1"],
-		["max_hp", "生命 %d", "MAX HP · +3"],
-		["defense", "防禦 %d", "DEF · +1"],
-		["luck", "幸運 %d", "LUCK · +1"]
+		["attack", "char.stat_button_attack"],
+		["max_hp", "char.stat_button_hp"],
+		["defense", "char.stat_button_defense"],
+		["luck", "char.stat_button_luck"]
 	]
 	for spec: Array in specs:
 		var stat: String = str(spec[0])
 		var button: Button = stat_buttons.get(stat) as Button
 		var data: Dictionary = stat_breakdown.get(stat, {})
 		if button != null:
-			UITheme.set_dual_button_text(button, str(spec[1]) % int(data.get("total", 0)), str(spec[2]))
+			UITheme.set_tr_button_text(button, str(spec[1]), [int(data.get("total", 0))])
 
 func _refresh_equipment_slots() -> void:
 	if equipment_row == null:
@@ -1041,12 +1060,12 @@ func _make_equipment_slot_card(slot: String) -> Panel:
 	stack.alignment = BoxContainer.ALIGNMENT_CENTER
 	stack.add_theme_constant_override("separation", 6)
 	margin.add_child(stack)
-	var slot_name: Dictionary = SLOT_NAMES[slot]
-	stack.add_child(UITheme.make_zh_en_label(str(slot_name["secondary"]), str(slot_name["primary"]), 23, 12, UITheme.INK))
+	var slot_key: String = "char.slot_%s" % slot
+	stack.add_child(UITheme.make_tr_dual(slot_key, 23, 12, UITheme.INK))
 	var uid: String = GameManager.get_equipped_uid(slot)
 	var item: Dictionary = EquipmentSystem.find_item(GameManager.get_inventory(), uid)
 	stack.add_child(_make_item_icon(slot, not item.is_empty(), Vector2(136, 136), item))
-	var item_text: String = EquipmentSystem.describe_item(item) if not item.is_empty() else "未裝備\nEMPTY"
+	var item_text: String = EquipmentSystem.describe_item(item) if not item.is_empty() else LanguageManager.t("char.slot_empty")
 	var item_label: Label = UITheme.make_label(item_text, 18, UITheme.INK if not item.is_empty() else UITheme.MUTED_INK, UITheme.FontRole.BOLD)
 	item_label.custom_minimum_size = Vector2(0, 48)
 	stack.add_child(item_label)
@@ -1055,7 +1074,7 @@ func _make_equipment_slot_card(slot: String) -> Panel:
 		empty_action.custom_minimum_size = Vector2(0, 104)
 		stack.add_child(empty_action)
 	else:
-		var unequip: Button = _make_small_button("卸下\nUNEQUIP", Color("#e7f1e8"), Vector2(0, 104))
+		var unequip: Button = _make_small_button_tr("char.unequip", Color("#e7f1e8"), Vector2(0, 104))
 		unequip.name = "UnequipButton_%s" % slot
 		unequip.custom_minimum_size = Vector2(180, 104)
 		unequip.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
@@ -1069,7 +1088,7 @@ func _refresh_inventory() -> void:
 	_clear_children(inventory_list)
 	var inventory: Array = GameManager.get_inventory()
 	if inventory_sort_button != null:
-		UITheme.set_dual_button_text(inventory_sort_button, "整理", _inventory_sort_label())
+		UITheme.set_dual_button_text(inventory_sort_button, LanguageManager.t("char.sort"), _inventory_sort_label())
 	if inventory.is_empty():
 		var empty_state: Panel = UITheme.make_panel(Color(1.0, 0.98, 0.93, 0.88), Color("#e3bd8c"), 28, 3)
 		empty_state.name = "EmptyInventoryState"
@@ -1079,8 +1098,8 @@ func _refresh_inventory() -> void:
 		empty_stack.alignment = BoxContainer.ALIGNMENT_CENTER
 		empty_stack.add_theme_constant_override("separation", 8)
 		empty_margin.add_child(empty_stack)
-		empty_stack.add_child(UITheme.make_zh_en_label("尚未取得裝備", "EMPTY BAG", 28, 16, UITheme.INK))
-		var empty_hint: Label = UITheme.make_label("通過關卡就有機會掉落裝備。", 21, UITheme.MUTED_INK)
+		empty_stack.add_child(UITheme.make_tr_dual("char.empty_bag", 28, 16, UITheme.INK))
+		var empty_hint: Label = UITheme.make_tr_label("char.empty_bag_hint", 21, UITheme.MUTED_INK)
 		empty_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		empty_hint.custom_minimum_size = Vector2(0, 56)
 		empty_stack.add_child(empty_hint)
@@ -1124,7 +1143,7 @@ func _make_item_card(item: Dictionary) -> Panel:
 	row.add_child(info)
 	var is_equipped: bool = EquipmentSystem.is_equipped(GameManager.player_state, str(item.get("uid", "")))
 	if is_equipped:
-		var status: Label = UITheme.make_label("已裝備  ·  EQUIPPED", 17, Color("#3e9a79"), UITheme.FontRole.BOLD)
+		var status: Label = UITheme.make_tr_label("char.equipped_badge", 17, Color("#3e9a79"), UITheme.FontRole.BOLD)
 		status.name = "EquippedBadge_%s" % str(item.get("uid", ""))
 		status.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1134,8 +1153,7 @@ func _make_item_card(item: Dictionary) -> Panel:
 	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.add_child(name_label)
-	var slot_name: Dictionary = SLOT_NAMES.get(slot, {"primary": "ITEM", "secondary": "裝備"})
-	var detail: Label = UITheme.make_label("%s · %s\n%s" % [str(slot_name["secondary"]), _rarity_name(rarity), _format_stats(EquipmentSystem.get_item_stats(item))], 19, UITheme.MUTED_INK)
+	var detail: Label = UITheme.make_label("%s · %s\n%s" % [LanguageManager.t("char.slot_%s" % slot), _rarity_name(rarity), _format_stats(EquipmentSystem.get_item_stats(item))], 19, UITheme.MUTED_INK)
 	detail.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1155,18 +1173,19 @@ func _make_item_card(item: Dictionary) -> Panel:
 	action_column.add_child(actions)
 	row.add_child(action_column)
 	var uid: String = str(item.get("uid", ""))
-	var equip_button: Button = _make_small_button("已穿戴\nEQUIPPED" if is_equipped else "穿戴\nEQUIP", Color("#a8d8c4") if is_equipped else Color("#d9ead8"), BAG_ACTION_BUTTON_SIZE, ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["equip"]))
+	var equip_button: Button = _make_small_button_tr("char.equipped" if is_equipped else "char.equip", Color("#a8d8c4") if is_equipped else Color("#d9ead8"), BAG_ACTION_BUTTON_SIZE, ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["equip"]))
 	equip_button.name = "EquipButton_%s" % uid
 	equip_button.disabled = is_equipped
 	equip_button.pressed.connect(_on_equip_pressed.bind(uid))
 	actions.add_child(equip_button)
 	var cost: int = EquipmentSystem.upgrade_cost(item)
-	var upgrade_button: Button = _make_small_button("強化 · %d 金幣\nUPGRADE" % cost, Color("#f5d88d"), BAG_ACTION_BUTTON_SIZE, ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["upgrade"]))
+	var upgrade_button: Button = _make_small_button_parts(LanguageManager.tf("char.upgrade", [cost]), "UPGRADE", Color("#f5d88d"), BAG_ACTION_BUTTON_SIZE, ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["upgrade"]))
 	upgrade_button.name = "UpgradeButton_%s" % uid
 	upgrade_button.disabled = GameManager.get_coins() < cost
 	upgrade_button.pressed.connect(_on_upgrade_pressed.bind(uid))
 	actions.add_child(upgrade_button)
-	var sell_text: String = "確認出售 +%d\nCONFIRM" % EquipmentSystem.sell_value(item) if pending_sell_uid == uid else "出售 +%d\nSELL" % EquipmentSystem.sell_value(item)
+	var sell_value: int = EquipmentSystem.sell_value(item)
+	var sell_text: String = LanguageManager.tf("char.sell_confirm", [sell_value]) if pending_sell_uid == uid else LanguageManager.tf("char.sell", [sell_value])
 	var sell_color: Color = Color("#efa7b5") if pending_sell_uid == uid else Color("#f5ccd3")
 	var sell_button: Button = _make_small_button(sell_text, sell_color, BAG_ACTION_BUTTON_SIZE, ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS["sell"]))
 	sell_button.name = "SellButton_%s" % uid
@@ -1193,13 +1212,13 @@ func _make_item_icon(slot: String, equipped: bool, icon_size: Vector2, item: Dic
 		icon.position = Vector2(8, 8)
 		icon_box.add_child(icon)
 	else:
-		var fallback: Label = UITheme.make_label(str(SLOT_NAMES.get(slot, {}).get("secondary", "裝備")), 18, UITheme.MUTED_INK)
+		var fallback: Label = UITheme.make_tr_label("char.slot_%s" % slot, 18, UITheme.MUTED_INK)
 		fallback.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		icon_box.add_child(fallback)
 	return icon_box
 
-func _add_stat_button(parent: GridContainer, title: String, stat: String) -> void:
-	var button: Button = _make_small_button(title, Color("#f5d88d"), Vector2(0, 124), ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS.get(stat, "")))
+func _add_stat_button(parent: GridContainer, stat_key: String, stat: String) -> void:
+	var button: Button = _make_small_button_tr(stat_key, Color("#f5d88d"), Vector2(0, 124), ACTION_BUTTON_SKIN_PATH, str(ICON_PATHS.get(stat, "")))
 	button.name = "StatButton_%s" % stat
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.pressed.connect(_on_stat_pressed.bind(stat))
@@ -1209,36 +1228,36 @@ func _add_stat_button(parent: GridContainer, title: String, stat: String) -> voi
 func _on_stat_pressed(stat: String) -> void:
 	pending_sell_uid = ""
 	var success: bool = GameManager.spend_stat_point(stat)
-	_refresh_all("STAT UP!\n能力提升！" if success else "NO POINTS\n升級後會獲得可分配屬性點。")
+	_refresh_all(LanguageManager.t("char.toast_stat_up") if success else LanguageManager.t("char.toast_no_points"))
 
 func _on_equip_pressed(uid: String) -> void:
 	pending_sell_uid = ""
-	_refresh_all("EQUIPPED!\n已穿戴裝備。" if GameManager.equip_item(uid) else "CANNOT EQUIP\n無法穿戴這件裝備。")
+	_refresh_all(LanguageManager.t("char.toast_equipped") if GameManager.equip_item(uid) else LanguageManager.t("char.toast_cannot_equip"))
 
 func _on_unequip_pressed(slot: String) -> void:
 	pending_sell_uid = ""
 	var success: bool = GameManager.unequip_slot(slot)
-	_refresh_all("UNEQUIPPED\n已卸下裝備。" if success else "EMPTY SLOT\n這個槽位沒有裝備。")
+	_refresh_all(LanguageManager.t("char.toast_unequipped") if success else LanguageManager.t("char.toast_empty_slot"))
 
 func _on_upgrade_pressed(uid: String) -> void:
 	pending_sell_uid = ""
 	var result: Dictionary = GameManager.upgrade_item(uid)
-	_refresh_all("UPGRADE SUCCESS\n強化成功！" if bool(result.get("success", false)) else "NOT ENOUGH COINS\n金幣不足，繼續冒險吧。")
+	_refresh_all(LanguageManager.t("char.toast_upgrade_success") if bool(result.get("success", false)) else LanguageManager.t("char.toast_not_enough_coins"))
 
 func _on_sell_pressed(uid: String) -> void:
 	if pending_sell_uid != uid:
 		pending_sell_uid = uid
-		_refresh_all("CONFIRM SELL\n再次按「確認出售」才會賣出這件裝備。")
+		_refresh_all(LanguageManager.t("char.toast_confirm_sell"))
 		return
 	pending_sell_uid = ""
 	var result: Dictionary = GameManager.sell_item(uid)
-	_refresh_all("SOLD\n已出售裝備，獲得 %d 金幣。" % int(result.get("coins", 0)) if bool(result.get("success", false)) else "EQUIPPED ITEM\n穿戴中的裝備不能出售。")
+	_refresh_all(LanguageManager.tf("char.toast_sold", [int(result.get("coins", 0))]) if bool(result.get("success", false)) else LanguageManager.t("char.toast_equipped_cannot_sell"))
 
 func _on_sort_inventory_pressed() -> void:
 	var current_index: int = INVENTORY_SORT_MODES.find(inventory_sort_mode)
 	inventory_sort_mode = INVENTORY_SORT_MODES[posmod(current_index + 1, INVENTORY_SORT_MODES.size())]
 	AudioManager.play_sfx("button_click")
-	_refresh_all("SORTED\n背包已依%s整理。" % _inventory_sort_label())
+	_refresh_all(LanguageManager.tf("char.toast_sorted", [_inventory_sort_label()]))
 
 func _sorted_inventory(inventory: Array) -> Array:
 	var result: Array = inventory.duplicate(true)
@@ -1262,7 +1281,7 @@ func _sorted_inventory(inventory: Array) -> Array:
 	return result
 
 func _inventory_sort_label() -> String:
-	return {"rarity": "稀有度", "slot": "部位", "level": "等級"}.get(inventory_sort_mode, "稀有度")
+	return LanguageManager.t({"rarity": "char.sort_rarity", "slot": "char.sort_slot", "level": "char.sort_level"}.get(inventory_sort_mode, "char.sort_rarity"))
 
 func _on_back_pressed() -> void:
 	AudioManager.play_sfx("button_click")
@@ -1293,9 +1312,16 @@ func _format_stats(stats: Dictionary) -> String:
 	return "  ".join(parts) if not parts.is_empty() else "—"
 
 func _rarity_name(rarity: String) -> String:
-	return {"common": "COMMON 普通", "uncommon": "UNCOMMON 精良", "rare": "RARE 稀有", "epic": "EPIC 史詩", "legendary": "LEGENDARY 傳說"}.get(rarity, "COMMON 普通")
+	return LanguageManager.t({"common": "common.rarity_common", "uncommon": "common.rarity_uncommon", "rare": "common.rarity_rare", "epic": "common.rarity_epic", "legendary": "common.rarity_legendary"}.get(rarity, "common.rarity_common"))
 
 func _make_small_button(text_value: String, color: Color, min_size: Vector2, logo_path: String = ACTION_BUTTON_SKIN_PATH, icon_path: String = "") -> Button:
+	return _make_small_button_parts(text_value, "", color, min_size, logo_path, icon_path)
+
+func _make_small_button_tr(key: String, color: Color, min_size: Vector2, logo_path: String = ACTION_BUTTON_SKIN_PATH, icon_path: String = "") -> Button:
+	var pair: Array = LanguageManager.pair(key)
+	return _make_small_button_parts(str(pair[0]), str(pair[1]), color, min_size, logo_path, icon_path)
+
+func _make_small_button_parts(primary: String, secondary: String, color: Color, min_size: Vector2, logo_path: String = ACTION_BUTTON_SKIN_PATH, icon_path: String = "") -> Button:
 	var button: Button = Button.new()
 	button.custom_minimum_size = Vector2(maxf(min_size.x, 96.0), maxf(min_size.y, 96.0))
 	button.clip_contents = false
@@ -1317,9 +1343,6 @@ func _make_small_button(text_value: String, color: Color, min_size: Vector2, log
 	button.add_theme_stylebox_override("pressed", pressed_style)
 	button.add_theme_stylebox_override("disabled", disabled_style)
 	UITheme.apply_font(button, UITheme.FontRole.BOLD)
-	var separator_index: int = text_value.find("\n")
-	var primary: String = text_value if separator_index < 0 else text_value.substr(0, separator_index)
-	var secondary: String = "" if separator_index < 0 else text_value.substr(separator_index + 1)
 	var content: HBoxContainer = HBoxContainer.new()
 	content.name = "ButtonContent"
 	content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1337,7 +1360,7 @@ func _make_small_button(text_value: String, color: Color, min_size: Vector2, log
 		icon.name = "ButtonIcon"
 		icon.custom_minimum_size = Vector2(icon_size, icon_size)
 		content.add_child(icon)
-	var labels: VBoxContainer = UITheme.make_zh_en_label(primary, secondary, 20 if min_size.x <= 140.0 else 22, 10 if min_size.x <= 140.0 else 12, UITheme.INK)
+	var labels: VBoxContainer = UITheme.make_pair_stack(primary, secondary, 20 if min_size.x <= 140.0 else 22, 10 if min_size.x <= 140.0 else 12, UITheme.INK, true)
 	labels.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	content.add_child(labels)
 	button.add_child(content)

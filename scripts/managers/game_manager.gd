@@ -65,6 +65,9 @@ func start_stage(stage_id: int) -> bool:
 	if not is_stage_unlocked(stage_id):
 		push_warning("Stage is locked: %d" % stage_id)
 		return false
+	if not consume_stamina(GameBalance.STAMINA_PER_STAGE):
+		push_warning("Not enough stamina to start stage: %d" % stage_id)
+		return false
 	map_focus_stage = 0
 	player_state["current_stage"] = stage_id
 	var attempts: Dictionary = player_state.get("stage_attempts", {}).duplicate() if player_state.get("stage_attempts", {}) is Dictionary else {}
@@ -120,6 +123,46 @@ func get_coins() -> int:
 
 func get_gems() -> int:
 	return maxi(0, int(player_state.get("gems", GameBalance.BASE_GEMS)))
+
+func get_stamina() -> int:
+	# Read-only lazy regen: recomputes from the persisted updated_at timestamp
+	# without mutating state, so HUD queries stay side-effect free. Persisted
+	# values are rolled forward by SaveManager normalization on the next save.
+	var regen: Dictionary = GameBalance.apply_stamina_regen(
+		int(player_state.get("stamina", GameBalance.STAMINA_MAX)),
+		int(player_state.get("stamina_updated_at", 0)),
+		Time.get_unix_time_from_system()
+	)
+	return int(regen.get("stamina", GameBalance.STAMINA_MAX))
+
+func get_stamina_regen_remaining_seconds() -> int:
+	if get_stamina() >= GameBalance.STAMINA_MAX:
+		return 0
+	var updated_at: float = float(maxi(0, int(player_state.get("stamina_updated_at", 0))))
+	var elapsed: float = maxf(0.0, Time.get_unix_time_from_system() - updated_at)
+	return maxi(0, int(ceil(GameBalance.STAMINA_REGEN_SECONDS - fmod(elapsed, GameBalance.STAMINA_REGEN_SECONDS))))
+
+func consume_stamina(amount: int) -> bool:
+	if amount <= 0:
+		return false
+	var current: int = get_stamina()
+	if current < amount:
+		return false
+	player_state["stamina"] = current - amount
+	player_state["stamina_updated_at"] = int(Time.get_unix_time_from_system())
+	_save_and_emit()
+	return true
+
+func add_stamina(amount: int) -> bool:
+	if amount <= 0:
+		return false
+	var current: int = get_stamina()
+	if current >= GameBalance.STAMINA_MAX:
+		return false
+	player_state["stamina"] = mini(GameBalance.STAMINA_MAX, current + amount)
+	player_state["stamina_updated_at"] = int(Time.get_unix_time_from_system())
+	_save_and_emit()
+	return true
 
 func get_all_characters() -> Array:
 	return DataManager.get_all_characters()
@@ -328,6 +371,13 @@ func add_gems(amount: int, _reason: String = "") -> bool:
 	_save_and_emit()
 	return true
 
+func add_coins(amount: int, _reason: String = "") -> bool:
+	if amount <= 0:
+		return false
+	player_state["coins"] = get_coins() + amount
+	_save_and_emit()
+	return true
+
 func spend_gems(amount: int) -> bool:
 	if amount <= 0 or get_gems() < amount:
 		return false
@@ -423,7 +473,6 @@ func apply_victory(exp_reward: int, coin_reward: int, battle_meta: Dictionary = 
 	player_state["total_mistakes"] = int(player_state.get("total_mistakes", 0)) + mistakes
 
 	var levels_gained: int = _apply_level_ups()
-	var drop_result: Dictionary = _roll_and_store_drop(current_stage)
 	var chapter_complete: bool = GameBalance.is_boss_stage(current_stage) and first_clear and current_stage > previous_highest
 	# Only the authored World 1 boss completes the named starting world. Later
 	# tenth-stage bosses complete their generated chapter, but must not reuse the
@@ -454,9 +503,7 @@ func apply_victory(exp_reward: int, coin_reward: int, battle_meta: Dictionary = 
 		"levels_gained": levels_gained,
 		"stage_unlocked": newly_unlocked_stage,
 		"chapter_complete": chapter_complete,
-		"world_complete": world_complete,
-		"dropped_item": drop_result.get("item", {}),
-		"auto_salvage_coins": int(drop_result.get("auto_salvage_coins", 0))
+		"world_complete": world_complete
 	}
 	battle_completed.emit(result.duplicate(true))
 	return result
@@ -821,36 +868,6 @@ func _apply_level_ups() -> int:
 			push_warning("Stopped an excessive level-up loop from an invalid save value.")
 			break
 	return levels_gained
-
-func _roll_and_store_drop(stage_id: int) -> Dictionary:
-	var pity: int = int(player_state.get("loot_pity", 0))
-	var guaranteed: bool = GameBalance.is_boss_stage(stage_id) or pity >= 4
-	var drop: Dictionary = EquipmentSystem.roll_drop(
-		stage_id,
-		get_luck(),
-		int(player_state.get("total_victories", 0)),
-		pity,
-		guaranteed
-	)
-	if drop.is_empty():
-		player_state["loot_pity"] = mini(4, pity + 1)
-		return {}
-	player_state["loot_pity"] = 0
-	var uid_number: int = maxi(1, int(player_state.get("next_item_uid", 1)))
-	var item: Dictionary = EquipmentSystem.create_instance(
-		str(drop.get("template_id", "")),
-		"item_%d" % uid_number,
-		int(drop.get("level", 1)),
-		int(drop.get("acquired_stage", stage_id))
-	)
-	if item.is_empty():
-		return {}
-	player_state["next_item_uid"] = uid_number + 1
-	var inventory: Array = get_inventory()
-	inventory.append(item)
-	player_state["inventory"] = inventory
-	equipment_changed.emit()
-	return {"item": item.duplicate(true)}
 
 func _record_stage_score(stage_id: int, stars: int, accuracy: float, mistakes: int, best_combo: int) -> Dictionary:
 	var scores: Dictionary = player_state.get("stage_scores", {}).duplicate(true) if player_state.get("stage_scores", {}) is Dictionary else {}

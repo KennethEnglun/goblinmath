@@ -6,6 +6,14 @@ const DIRECT_RARITIES: Array[String] = ["common", "uncommon", "rare", "epic"]
 
 static func pull_cost(count: int) -> int:
 	var config: Dictionary = _config()
+	# The test-cost flag mirrors the character shop's test-price pattern: while
+	# enabled, pulls are free so equipment flows can be exercised in development.
+	if DataManager.is_gacha_test_cost_enabled():
+		if count == 1:
+			return maxi(0, _safe_int(config.get("test_single_cost", 0), 0))
+		if count == 10:
+			return maxi(0, _safe_int(config.get("test_ten_cost", 0), 0))
+		return 0
 	if count == 1:
 		return maxi(0, _safe_int(config.get("single_cost", GameBalance.GACHA_SINGLE_COST), GameBalance.GACHA_SINGLE_COST))
 	if count == 10:
@@ -24,9 +32,11 @@ static func roll(state: Dictionary, count: int, seed: int = 0) -> Dictionary:
 	if count != 1 and count != 10:
 		return {"success": false, "reason": "invalid_pull_count"}
 	var cost: int = pull_cost(count)
-	if cost <= 0:
+	# A zero cost is a legitimate free pull (test-cost mode), so only a negative
+	# cost indicates a broken config. Free pulls skip the gem requirement.
+	if cost < 0:
 		return {"success": false, "reason": "invalid_gacha_config"}
-	if int(state.get("gems", 0)) < cost:
+	if cost > 0 and int(state.get("gems", 0)) < cost:
 		return {"success": false, "reason": "not_enough_gems", "cost": cost}
 	var highest_completed_stage: int = maxi(1, _safe_int(state.get("highest_completed_stage", 0), 0))
 	var available_templates: Dictionary = _available_templates(highest_completed_stage)
