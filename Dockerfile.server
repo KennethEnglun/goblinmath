@@ -17,7 +17,8 @@ RUN apt-get update \
 
 WORKDIR /project
 COPY . /project
-RUN godot --headless --path /project --import \
+RUN mkdir -p /out \
+	&& godot --headless --path /project --import \
 	&& godot --headless --path /project --export-release "Linux Server" /out/server.x86_64 \
 	&& test -f /out/server.x86_64
 
