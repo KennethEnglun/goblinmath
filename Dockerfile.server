@@ -1,17 +1,36 @@
-# Dedicated PvP match server (headless Godot).
-# Build context must contain build/server/goblin_pvp_server.x86_64:
-#   godot --headless --export-release "Linux Server" build/server/goblin_pvp_server.x86_64
-#   docker build -f Dockerfile.server -t goblin-pvp-server .
-FROM debian:bookworm-slim
+# Dedicated PvP match server (headless Godot), built fully from source.
+# Railway builds this straight from the GitHub repo — no local export needed.
+# Stage 1 downloads Godot 4.6.3-stable + Linux export templates and exports
+# the "Linux Server" preset; stage 2 ships the binary on a slim runtime.
+FROM debian:bookworm-slim AS export
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends ca-certificates curl unzip \
+	&& rm -rf /var/lib/apt/lists/* \
+	&& curl -fsSL https://github.com/godotengine/godot/releases/download/4.6.3-stable/Godot_v4.6.3-stable_linux.x86_64.zip -o /tmp/godot.zip \
+	&& curl -fsSL https://github.com/godotengine/godot/releases/download/4.6.3-stable/Godot_v4.6.3-stable_export_templates.tpz -o /tmp/templates.tpz \
+	&& unzip -q /tmp/godot.zip -d /tmp/godot \
+	&& mv /tmp/godot/Godot_v4.6.3-stable_linux.x86_64 /usr/local/bin/godot \
+	&& mkdir -p /root/.local/share/godot/export_templates/4.6.3.stable \
+	&& unzip -q /tmp/templates.tpz -d /tmp/templates \
+	&& mv /tmp/templates/templates/* /root/.local/share/godot/export_templates/4.6.3.stable/ \
+	&& rm -rf /tmp/godot /tmp/godot.zip /tmp/templates /tmp/templates.tpz
 
+WORKDIR /project
+COPY . /project
+RUN godot --headless --path /project --import \
+	&& godot --headless --path /project --export-release "Linux Server" /out/server.x86_64 \
+	&& test -f /out/server.x86_64
+
+FROM debian:bookworm-slim
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends ca-certificates \
-	&& rm -rf /var/lib/apt/lists/*
-
+	&& rm -rf /var/lib/apt/lists/* \
+	&& useradd --system --uid 1001 pvp \
+	&& mkdir -p /home/pvp/.local/share/godot \
+	&& chown -R pvp:pvp /home/pvp
 WORKDIR /app
-COPY build/server/goblin_pvp_server.x86_64 /app/server.x86_64
-RUN chmod +x /app/server.x86_64 && useradd --system --uid 1001 pvp \
-	&& mkdir -p /home/pvp/.local/share/godot && chown -R pvp:pvp /home/pvp
+COPY --from=export /out/server.x86_64 /app/server.x86_64
+RUN chmod +x /app/server.x86_64
 USER pvp
 ENV PVP_SERVER=1
 ENV HOME=/home/pvp

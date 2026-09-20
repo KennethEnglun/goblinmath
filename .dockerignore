@@ -1,0 +1,8 @@
+# Keep Docker build contexts lean for both images (web nginx + PvP server).
+.git
+.godot
+build
+output
+tmp
+*.log
+.DS_Store

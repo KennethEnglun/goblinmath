@@ -68,7 +68,7 @@ mkdir -p /private/tmp/goblin-ios-release
 
 ## 公開 Web 版（GitHub → Railway）
 
-本 repo 的 `web/` 是由 Godot `Web QA` preset 產生的 release bundle。根目錄的 `Dockerfile` 會用 nginx 靜態服務它；`railway.toml` 已設定 Dockerfile builder、`/healthz` healthcheck 和失敗自動重啟。
+本 repo 的 `web/` 是由 Godot `Web QA` preset 產生的 release bundle。根目錄的 `Dockerfile` 會用 nginx 靜態服務它。設定（builder、healthcheck `/healthz`、失敗重啟）改在 Railway dashboard 的 service Settings 管理 — repo 根目錄已不放 `railway.toml`，因為同一個 repo 現在要建兩個 service（web + PvP 伺服器），共用的 config-as-code 會把單一 Dockerfile 路徑強套到兩邊。
 
 本機重新產生 Web bundle：
 
