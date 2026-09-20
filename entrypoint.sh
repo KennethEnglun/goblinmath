@@ -6,7 +6,9 @@
 set -e
 
 ( while true; do
-	PORT=9124 /app/server.x86_64 --pvp-server --headless || true
+	# "--" separates Godot engine args from our user arg; PVP_SERVER=1 is also
+	# baked into the image as a fallback.
+	PORT=9124 /app/server.x86_64 --headless -- --pvp-server || true
 	sleep 2
 done ) &
 

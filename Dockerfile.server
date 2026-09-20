@@ -38,5 +38,6 @@ COPY --from=export /out/server.x86_64 /app/server.x86_64
 COPY nginx-pvp.conf /etc/nginx/conf.d/pvp.conf
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /app/server.x86_64 /entrypoint.sh
+ENV PVP_SERVER=1
 EXPOSE 9123
 ENTRYPOINT ["/entrypoint.sh"]
