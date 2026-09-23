@@ -66,6 +66,8 @@ const STAMINA_AD_REWARD: int = 5
 # every answer before applying damage.
 const PVP_BASE_HP: int = 30
 const PVP_BASE_ATTACK: int = 10
+const SKILL_ENERGY_MAX: int = 6
+const SKILL_ENERGY_COST: int = 3
 const PVP_QUESTION_SECONDS: int = 10
 const PVP_RECONNECT_SECONDS: float = 10.0
 const PVP_ROOM_LIFETIME_SECONDS: float = 120.0
@@ -78,8 +80,21 @@ const RARITY_MULTIPLIERS: Dictionary = {
 	"uncommon": 1.22,
 	"rare": 1.52,
 	"epic": 1.9,
-	"legendary": 2.35
+	"legendary": 2.35,
+	"mythic": 3.0
 }
+
+static func skill_energy_gain(combo: int) -> int:
+	if combo >= 10:
+		return 4
+	if combo >= 5:
+		return 3
+	if combo >= 2:
+		return 2
+	return 1 if combo == 1 else 0
+
+static func skill_amount(attack: int, ratio: float, minimum: int = 0) -> int:
+	return maxi(minimum, int(floor(float(maxi(1, attack)) * maxf(0.0, ratio))))
 
 static func combo_multiplier(combo: int) -> float:
 	if combo >= 10:

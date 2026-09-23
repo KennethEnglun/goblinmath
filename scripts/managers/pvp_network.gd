@@ -20,6 +20,7 @@ signal match_found(payload: Dictionary)
 signal countdown_tick(value: int)
 signal question_received(index: int, text: String, seconds: int)
 signal round_resolved(payload: Dictionary)
+signal skill_result(payload: Dictionary)
 signal match_ended(payload: Dictionary)
 signal opponent_reconnecting(seconds_left: int)
 signal opponent_resumed()
@@ -52,6 +53,7 @@ var match_payload: Dictionary = {}
 var in_match: bool = false
 var answered_current: bool = false
 var current_question_index: int = -1
+var current_question_text: String = ""
 var auto_rejoin_active: bool = false
 var reconnect_deadline_ms: int = 0
 var reconnect_next_try_ms: int = 0
@@ -61,6 +63,7 @@ var _client_socket: WebSocketMultiplayerPeer = null
 # juggling signal closures.
 var last_round_payload: Dictionary = {}
 var last_round_index: int = -1
+var last_skill_payloads: Array[Dictionary] = []
 var last_end_payload: Dictionary = {}
 var last_error: String = ""
 var last_room_code: String = ""
@@ -191,13 +194,22 @@ func cancel_matching() -> void:
 		_set_state(PvpProtocol.STATE_CONNECTED)
 
 func submit_answer(index: int, answer: int) -> void:
-	if not in_match or answered_current:
+	if not in_match or answered_current or index != current_question_index:
 		return
 	answered_current = true
 	_srv_submit_answer.rpc_id(1, index, answer)
 
+func use_skill() -> bool:
+	if not in_match or current_question_index < 0:
+		return false
+	# Skill requests are independent of the answer lock. The authoritative
+	# server checks match phase, available energy, and the character's skill.
+	_srv_use_skill.rpc_id(1, current_question_index)
+	return true
+
 func leave_match() -> void:
-	if in_match:
+	var peer: MultiplayerPeer = multiplayer.multiplayer_peer
+	if in_match and not is_server_mode and peer != null and peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED and multiplayer.get_unique_id() != 1:
 		_srv_leave.rpc_id(1)
 	_reset_match_state()
 	if client_state != PvpProtocol.STATE_OFFLINE:
@@ -275,16 +287,92 @@ func _srv_submit_answer(index: int, answer: int) -> void:
 	var sender: int = multiplayer.get_remote_sender_id()
 	if not srv_peer_match.has(sender):
 		return
-	var match_state: Dictionary = srv_matches[int(srv_peer_match[sender])]
-	if str(match_state["phase"]) != "question" or int(match_state["index"]) != index:
+	var match_state: Dictionary = srv_matches.get(int(srv_peer_match[sender]), {})
+	if match_state.is_empty() or str(match_state.get("phase", "")) != "question":
 		return
-	if not match_state["answers"].has(sender) or int(match_state["answers"][sender]) != -1:
+	var player: Dictionary = match_state["players"].get(sender, {})
+	if player.is_empty() or int(player.get("question_index", -1)) != index or bool(player.get("question_answered", false)):
 		return
-	match_state["answers"][sender] = answer
-	for peer_id in match_state["answers"].keys():
-		if int(match_state["answers"][peer_id]) == -1:
+	if Time.get_ticks_msec() >= int(player.get("question_deadline_ms", 0)):
+		_server_resolve_player_action(match_state, sender, -1, true)
+		return
+	_server_resolve_player_action(match_state, sender, answer, false)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _srv_use_skill(index: int) -> void:
+	if not is_server_mode:
+		return
+	var sender: int = multiplayer.get_remote_sender_id()
+	if not srv_peer_match.has(sender):
+		return
+	var match_id: int = int(srv_peer_match[sender])
+	var match_state: Dictionary = srv_matches.get(match_id, {})
+	if match_state.is_empty():
+		return
+	if str(match_state.get("phase", "")) != "question":
+		_send_skill_rejection(sender, "skill.unavailable")
+		return
+	var player: Dictionary = match_state["players"].get(sender, {})
+	if player.is_empty() or int(player.get("hp", 0)) <= 0 \
+			or int(player.get("question_index", -1)) != index \
+			or bool(player.get("question_answered", false)):
+		_send_skill_rejection(sender, "skill.unavailable")
+		return
+	if Time.get_ticks_msec() >= int(player.get("question_deadline_ms", 0)):
+		_server_resolve_player_action(match_state, sender, -1, true)
+		if not srv_matches.has(match_id):
 			return
-	_server_resolve_round(match_state)
+		_send_skill_rejection(sender, "skill.unavailable")
+		return
+	if int(player.get("skill_energy", 0)) < GameBalance.SKILL_ENERGY_COST:
+		_send_skill_rejection(sender, "skill.insufficient")
+		return
+	var character: Dictionary = DataManager.get_character(str(player.get("char_id", "")))
+	var skill: Dictionary = _as_dictionary(character.get("active_skill", {}))
+	if character.is_empty() or skill.is_empty():
+		_send_skill_rejection(sender, "skill.unavailable")
+		return
+	var target_id: int = _other_peer_id(match_state, sender)
+	var target: Dictionary = match_state["players"].get(target_id, {})
+	if target.is_empty():
+		_send_skill_rejection(sender, "skill.unavailable")
+		return
+	player["skill_energy"] = maxi(0, int(player.get("skill_energy", 0)) - GameBalance.SKILL_ENERGY_COST)
+	var heal: int = GameBalance.skill_amount(GameBalance.PVP_BASE_ATTACK, float(skill.get("heal_ratio", 0.0)))
+	var shield: int = mini(GameBalance.PVP_BASE_HP, GameBalance.skill_amount(GameBalance.PVP_BASE_ATTACK, float(skill.get("shield_ratio", 0.0))))
+	var damage: int = GameBalance.skill_amount(GameBalance.PVP_BASE_ATTACK, float(skill.get("damage_ratio", 1.0)), 1)
+	player["hp"] = mini(GameBalance.PVP_BASE_HP, int(player.get("hp", GameBalance.PVP_BASE_HP)) + heal)
+	player["skill_shield"] = maxi(int(player.get("skill_shield", 0)), shield)
+	var damage_applied: int = _server_apply_damage(target, damage)
+	var player_ids: Array = match_state["players"].keys().duplicate()
+	for receiver_value: Variant in player_ids:
+		var receiver_id: int = int(receiver_value)
+		if not _peer_online(receiver_id):
+			continue
+		var receiver: Dictionary = match_state["players"][receiver_id]
+		var receiver_target: Dictionary = match_state["players"][_other_peer_id(match_state, receiver_id)]
+		_cli_skill_result.rpc_id(receiver_id, {
+			"accepted": true,
+			"actor_is_you": receiver_id == sender,
+			"actor_peer": sender,
+			"actor_char": str(player["char_id"]),
+			"skill_id": str(skill.get("id", "")),
+			"hits": clampi(int(skill.get("hits", 1)), 1, 3),
+			"damage": damage,
+			"damage_applied": damage_applied,
+			"heal": heal,
+			"shield_added": shield,
+			"hp_you": int(receiver.get("hp", 0)),
+			"hp_opp": int(receiver_target.get("hp", 0)),
+			"combo_you": int(receiver.get("combo", 0)),
+			"combo_opp": int(receiver_target.get("combo", 0)),
+			"energy_you": int(receiver.get("skill_energy", 0)),
+			"energy_opp": int(receiver_target.get("skill_energy", 0)),
+			"shield_you": int(receiver.get("skill_shield", 0)),
+			"shield_opp": int(receiver_target.get("skill_shield", 0)),
+		})
+	if int(target.get("hp", 0)) <= 0:
+		_server_end_match(match_state, sender, PvpProtocol.END_REASON_HP)
 
 @rpc("any_peer", "call_remote", "reliable")
 func _srv_rejoin(token: String) -> void:
@@ -306,25 +394,32 @@ func _srv_rejoin(token: String) -> void:
 	var player: Dictionary = match_state["players"][old_peer]
 	match_state["players"].erase(old_peer)
 	match_state["players"][sender] = player
-	match_state["answers"].erase(old_peer)
-	match_state["answers"][sender] = -1
 	srv_peer_match.erase(old_peer)
 	srv_peer_match[sender] = match_id
 	match_state["reconnect_token"] = ""
 	if str(match_state["phase"]) == "reconnect":
-		match_state["phase"] = "question"
+		match_state["phase"] = str(match_state.get("resume_phase", "question"))
 	_cli_match_found.rpc_id(sender, _match_payload_for(match_id, sender, true))
 	var other_id: int = _other_peer_id(match_state, sender)
 	if other_id != 0 and _peer_online(other_id):
 		_cli_opp_resumed.rpc_id(other_id)
 	if str(match_state["phase"]) == "question":
-		var remaining: int = int(ceil(float(int(match_state["deadline_ms"]) - Time.get_ticks_msec()) / 1000.0))
-		if remaining < 3:
-			match_state["deadline_ms"] = Time.get_ticks_msec() + REJOIN_GRACE_MS
-			remaining = 3
-		_cli_question.rpc_id(sender, int(match_state["index"]), str(match_state["question"].get("question_text", "")), remaining)
+		var now: int = Time.get_ticks_msec()
+		for peer_value: Variant in match_state["players"].keys():
+			var peer_id: int = int(peer_value)
+			var current_player: Dictionary = match_state["players"][peer_id]
+			var remaining_ms: int = maxi(REJOIN_GRACE_MS, int(current_player.get("paused_remaining_ms", REJOIN_GRACE_MS)))
+			current_player["question_answered"] = false
+			current_player["question_deadline_ms"] = now + remaining_ms
+			current_player["paused_remaining_ms"] = 0
+			_server_send_player_question(match_state, peer_id, int(ceil(float(remaining_ms) / 1000.0)))
 	else:
-		_cli_countdown.rpc_id(sender, int(match_state["countdown_value"]))
+		var countdown_remaining: int = maxi(1, int(match_state.get("countdown_remaining_ms", COUNTDOWN_TICK_MS)))
+		match_state["next_tick_ms"] = Time.get_ticks_msec() + countdown_remaining
+		for peer_value: Variant in match_state["players"].keys():
+			var peer_id: int = int(peer_value)
+			if _peer_online(peer_id):
+				_cli_countdown.rpc_id(peer_id, int(match_state["countdown_value"]))
 
 @rpc("any_peer", "call_remote", "reliable")
 func _srv_leave() -> void:
@@ -362,6 +457,11 @@ func _cli_room_created(code: String) -> void:
 func _cli_match_found(payload: Dictionary) -> void:
 	match_payload = payload
 	match_token = str(payload.get("token", ""))
+	current_question_index = int(payload.get("index", -1))
+	current_question_text = ""
+	last_round_payload = {}
+	last_round_index = -1
+	last_skill_payloads.clear()
 	var resumed: bool = bool(payload.get("resumed", false))
 	if not resumed and not auto_rejoin_active:
 		if not GameManager.consume_stamina(GameBalance.STAMINA_PER_STAGE):
@@ -383,6 +483,7 @@ func _cli_countdown(value: int) -> void:
 func _cli_question(index: int, text: String, seconds: int) -> void:
 	answered_current = false
 	current_question_index = index
+	current_question_text = text
 	_set_state(PvpProtocol.STATE_IN_MATCH)
 	question_received.emit(index, text, seconds)
 
@@ -391,6 +492,11 @@ func _cli_round(payload: Dictionary) -> void:
 	last_round_payload = payload
 	last_round_index = int(payload.get("index", -1))
 	round_resolved.emit(payload)
+
+@rpc("authority", "call_remote", "reliable")
+func _cli_skill_result(payload: Dictionary) -> void:
+	last_skill_payloads.append(payload.duplicate(true))
+	skill_result.emit(payload)
 
 @rpc("authority", "call_remote", "reliable")
 func _cli_end(payload: Dictionary) -> void:
@@ -526,8 +632,14 @@ func _server_tick() -> void:
 					else:
 						_server_send_question(match_state)
 			"question":
-				if now >= int(match_state["deadline_ms"]):
-					_server_resolve_round(match_state)
+				for peer_value: Variant in match_state["players"].keys().duplicate():
+					if not srv_matches.has(int(match_id)) or str(match_state.get("phase", "")) != "question":
+						break
+					var peer_id: int = int(peer_value)
+					var player: Dictionary = match_state["players"].get(peer_id, {})
+					if not player.is_empty() and not bool(player.get("question_answered", false)) \
+							and now >= int(player.get("question_deadline_ms", 0)):
+						_server_resolve_player_action(match_state, peer_id, -1, true)
 			"reconnect":
 				if now >= int(match_state["reconnect_deadline_ms"]):
 					var winner: int = 0
@@ -558,20 +670,25 @@ func _server_start_match(first: int, second: int) -> void:
 			"char_id": str(srv_meta[peer_id]["char_id"]),
 			"hp": GameBalance.PVP_BASE_HP,
 			"combo": 0,
+			"skill_energy": 0,
+			"skill_shield": 0,
+			"question_index": -1,
+			"question_answered": false,
+			"question_deadline_ms": 0,
+			"paused_remaining_ms": 0,
 		}
 	srv_matches[match_id] = {
 		"id": match_id,
 		"players": players,
-		"answers": {first: -1, second: -1},
 		"seed": seed_value,
 		"params": params,
 		"generator": generator,
-		"index": 0,
-		"question": {},
+		"question_cache": [],
 		"phase": "countdown",
 		"countdown_value": COUNTDOWN_START,
 		"next_tick_ms": Time.get_ticks_msec() + COUNTDOWN_TICK_MS,
-		"deadline_ms": 0,
+		"countdown_remaining_ms": COUNTDOWN_TICK_MS,
+		"resume_phase": "countdown",
 		"reconnect_token": "",
 		"reconnect_deadline_ms": 0,
 	}
@@ -584,58 +701,108 @@ func _server_start_match(first: int, second: int) -> void:
 		_cli_countdown.rpc_id(peer_id, COUNTDOWN_START)
 
 func _server_send_question(match_state: Dictionary) -> void:
-	var question: Dictionary = match_state["generator"].generate(match_state["params"])
-	match_state["question"] = question
 	match_state["phase"] = "question"
-	match_state["deadline_ms"] = Time.get_ticks_msec() + GameBalance.PVP_QUESTION_SECONDS * 1000
-	for peer_id in match_state["players"].keys():
-		match_state["answers"][peer_id] = -1
-		if _peer_online(peer_id):
-			_cli_question.rpc_id(peer_id, int(match_state["index"]), str(question.get("question_text", "")), GameBalance.PVP_QUESTION_SECONDS)
+	var deadline: int = Time.get_ticks_msec() + GameBalance.PVP_QUESTION_SECONDS * 1000
+	for peer_value: Variant in match_state["players"].keys():
+		var peer_id: int = int(peer_value)
+		var player: Dictionary = match_state["players"][peer_id]
+		player["question_index"] = 0
+		player["question_answered"] = false
+		player["question_deadline_ms"] = deadline
+		_server_send_player_question(match_state, peer_id, GameBalance.PVP_QUESTION_SECONDS)
 
-func _server_resolve_round(match_state: Dictionary) -> void:
-	var correct_answer: int = int(match_state["question"].get("answer", 0))
-	var player_ids: Array = match_state["players"].keys().duplicate()
-	var correctness: Dictionary = {}
-	for peer_id in player_ids:
-		var submitted: int = int(match_state["answers"].get(peer_id, -1))
-		correctness[peer_id] = submitted != -1 and submitted == correct_answer
-	for peer_id in player_ids:
-		var me: Dictionary = match_state["players"][peer_id]
-		var other: Dictionary = match_state["players"][_other_peer_id(match_state, peer_id)]
-		if bool(correctness[peer_id]):
-			me["combo"] = int(me["combo"]) + 1
-			other["hp"] = int(other["hp"]) - GameBalance.calculate_damage(GameBalance.PVP_BASE_ATTACK, int(me["combo"]))
-		else:
-			me["combo"] = 0
-			me["hp"] = int(me["hp"]) - GameBalance.damage_taken(GameBalance.PVP_BASE_ATTACK, 0)
-	for peer_id in player_ids:
-		match_state["answers"][peer_id] = -1
-	for peer_id in player_ids:
-		if not _peer_online(peer_id):
+func _server_send_player_question(match_state: Dictionary, peer_id: int, seconds: int) -> void:
+	var player: Dictionary = match_state["players"].get(peer_id, {})
+	if player.is_empty():
+		return
+	var index: int = int(player.get("question_index", 0))
+	var question: Dictionary = _server_question_at(match_state, index)
+	if _peer_online(peer_id):
+		_cli_question.rpc_id(peer_id, index, str(question.get("question_text", "")), maxi(1, seconds))
+
+func _server_question_at(match_state: Dictionary, index: int) -> Dictionary:
+	var question_cache: Array = match_state.get("question_cache", [])
+	var generator: QuestionGenerator = match_state.get("generator") as QuestionGenerator
+	while question_cache.size() <= index:
+		question_cache.append(generator.generate(match_state["params"]))
+	match_state["question_cache"] = question_cache
+	return question_cache[index] as Dictionary
+
+func _server_resolve_player_action(match_state: Dictionary, actor_id: int, answer: int, timed_out: bool) -> void:
+	if str(match_state.get("phase", "")) != "question":
+		return
+	var actor: Dictionary = match_state["players"].get(actor_id, {})
+	if actor.is_empty() or bool(actor.get("question_answered", false)):
+		return
+	actor["question_answered"] = true
+	var action_index: int = int(actor.get("question_index", -1))
+	var question: Dictionary = _server_question_at(match_state, action_index)
+	var correct: bool = not timed_out and answer == int(question.get("answer", 0))
+	var target_id: int = _other_peer_id(match_state, actor_id)
+	var target: Dictionary = match_state["players"].get(target_id, {})
+	if target.is_empty():
+		return
+	var damage_applied: int = 0
+	if correct:
+		actor["combo"] = int(actor.get("combo", 0)) + 1
+		actor["skill_energy"] = mini(GameBalance.SKILL_ENERGY_MAX, int(actor.get("skill_energy", 0)) + GameBalance.skill_energy_gain(int(actor["combo"])))
+		damage_applied = _server_apply_damage(target, GameBalance.calculate_damage(GameBalance.PVP_BASE_ATTACK, int(actor["combo"])))
+	else:
+		actor["combo"] = 0
+		damage_applied = _server_apply_damage(actor, GameBalance.damage_taken(GameBalance.PVP_BASE_ATTACK, 0))
+
+	for receiver_value: Variant in match_state["players"].keys().duplicate():
+		var receiver_id: int = int(receiver_value)
+		if not _peer_online(receiver_id):
 			continue
-		var other_id: int = _other_peer_id(match_state, peer_id)
-		_cli_round.rpc_id(peer_id, {
-			"index": int(match_state["index"]),
-			"you_correct": bool(correctness[peer_id]),
-			"opp_correct": bool(correctness[other_id]),
-			"hp_you": int(match_state["players"][peer_id]["hp"]),
-			"hp_opp": int(match_state["players"][other_id]["hp"]),
-			"combo_you": int(match_state["players"][peer_id]["combo"]),
-			"combo_opp": int(match_state["players"][other_id]["combo"]),
+		var receiver: Dictionary = match_state["players"][receiver_id]
+		var receiver_target: Dictionary = match_state["players"][_other_peer_id(match_state, receiver_id)]
+		_cli_round.rpc_id(receiver_id, {
+			"index": action_index,
+			"actor_is_you": receiver_id == actor_id,
+			"actor_correct": correct,
+			"timed_out": timed_out,
+			"damage_applied": damage_applied,
+			"hp_you": int(receiver.get("hp", 0)),
+			"hp_opp": int(receiver_target.get("hp", 0)),
+			"combo_you": int(receiver.get("combo", 0)),
+			"combo_opp": int(receiver_target.get("combo", 0)),
+			"energy_you": int(receiver.get("skill_energy", 0)),
+			"energy_opp": int(receiver_target.get("skill_energy", 0)),
+			"shield_you": int(receiver.get("skill_shield", 0)),
+			"shield_opp": int(receiver_target.get("skill_shield", 0)),
 		})
-	var hp_first: int = int(match_state["players"][player_ids[0]]["hp"])
-	var hp_second: int = int(match_state["players"][player_ids[1]]["hp"])
-	if hp_first <= 0 or hp_second <= 0:
-		var winner: int = 0
-		if hp_first > 0:
-			winner = player_ids[0]
-		elif hp_second > 0:
-			winner = player_ids[1]
+
+	if int(actor.get("hp", 0)) <= 0 or int(target.get("hp", 0)) <= 0:
+		var winner: int = actor_id if int(target.get("hp", 0)) <= 0 else target_id
 		_server_end_match(match_state, winner, PvpProtocol.END_REASON_HP)
 		return
-	match_state["index"] = int(match_state["index"]) + 1
-	_server_send_question(match_state)
+	actor["question_index"] = action_index + 1
+	actor["question_answered"] = false
+	actor["question_deadline_ms"] = Time.get_ticks_msec() + GameBalance.PVP_QUESTION_SECONDS * 1000
+	_server_send_player_question(match_state, actor_id, GameBalance.PVP_QUESTION_SECONDS)
+
+func _send_skill_rejection(peer_id: int, reason_key: String) -> void:
+	if not _peer_online(peer_id):
+		return
+	var match_state: Dictionary = srv_matches.get(int(srv_peer_match.get(peer_id, 0)), {})
+	var player: Dictionary = match_state.get("players", {}).get(peer_id, {}) if not match_state.is_empty() else {}
+	_cli_skill_result.rpc_id(peer_id, {
+		"accepted": false,
+		"actor_is_you": true,
+		"reason_key": reason_key,
+		"energy_you": int(player.get("skill_energy", 0)),
+		"shield_you": int(player.get("skill_shield", 0)),
+	})
+
+func _server_apply_damage(target: Dictionary, raw_damage: int) -> int:
+	var damage: int = maxi(0, raw_damage)
+	var shield: int = maxi(0, int(target.get("skill_shield", 0)))
+	var absorbed: int = mini(shield, damage)
+	target["skill_shield"] = shield - absorbed
+	damage -= absorbed
+	target["hp"] = maxi(0, int(target.get("hp", 0)) - damage)
+	return damage
 
 func _server_end_match(match_state: Dictionary, winner: int, reason: String) -> void:
 	var player_ids: Array = match_state["players"].keys().duplicate()
@@ -671,6 +838,14 @@ func _srv_on_peer_disconnected(peer_id: int) -> void:
 	if not _any_player_online(match_state):
 		_cleanup_match(match_id)
 		return
+	var now: int = Time.get_ticks_msec()
+	match_state["resume_phase"] = str(match_state.get("phase", "question"))
+	if str(match_state["phase"]) == "question":
+		for player_value: Variant in match_state["players"].keys():
+			var player: Dictionary = match_state["players"][int(player_value)]
+			player["paused_remaining_ms"] = maxi(0, int(player.get("question_deadline_ms", now)) - now)
+	elif str(match_state["phase"]) == "countdown":
+		match_state["countdown_remaining_ms"] = maxi(1, int(match_state.get("next_tick_ms", now)) - now)
 	match_state["phase"] = "reconnect"
 	match_state["reconnect_token"] = str(match_state["players"][peer_id]["token"])
 	match_state["reconnect_deadline_ms"] = Time.get_ticks_msec() + int(server_reconnect_seconds * 1000.0)
@@ -730,11 +905,13 @@ func _reset_match_state() -> void:
 	in_match = false
 	answered_current = false
 	current_question_index = -1
+	current_question_text = ""
 	auto_rejoin_active = false
 	match_token = ""
 	match_payload = {}
 	last_round_payload = {}
 	last_round_index = -1
+	last_skill_payloads.clear()
 	last_end_payload = {}
 	last_room_code = ""
 	opponent_offline_seen = false
@@ -783,11 +960,15 @@ func _other_peer_id(match_state: Dictionary, peer_id: int) -> int:
 			return candidate
 	return 0
 
+func _as_dictionary(value: Variant) -> Dictionary:
+	return value as Dictionary if value is Dictionary else {}
+
 func _match_payload_for(match_id: int, peer_id: int, resumed: bool) -> Dictionary:
 	var match_state: Dictionary = srv_matches[match_id]
 	var me: Dictionary = match_state["players"][peer_id]
 	var other: Dictionary = match_state["players"][_other_peer_id(match_state, peer_id)]
 	return {
+		"char_id": str(me["char_id"]),
 		"opponent_name": str(other["name"]),
 		"opponent_char": str(other["char_id"]),
 		"seed": int(match_state["seed"]),
@@ -795,7 +976,13 @@ func _match_payload_for(match_id: int, peer_id: int, resumed: bool) -> Dictionar
 		"token": str(me["token"]),
 		"hp": int(me["hp"]),
 		"opponent_hp": int(other["hp"]),
-		"index": int(match_state["index"]),
+		"skill_energy": int(me.get("skill_energy", 0)),
+		"opponent_skill_energy": int(other.get("skill_energy", 0)),
+		"skill_shield": int(me.get("skill_shield", 0)),
+		"opponent_skill_shield": int(other.get("skill_shield", 0)),
+		"combo": int(me.get("combo", 0)),
+		"opponent_combo": int(other.get("combo", 0)),
+		"index": int(me.get("question_index", -1)),
 		"resumed": resumed,
 	}
 

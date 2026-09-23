@@ -14,7 +14,16 @@
       "price_gems": 0,
       "test_price_gems": 0,
       "sort_order": 0,
-      "unlocked_by_default": true
+      "unlocked_by_default": true,
+      "active_skill": {
+        "id": "seed_bonk",
+        "name_key": "skill.sprout_goblin.name",
+        "description_key": "skill.sprout_goblin.description",
+        "damage_ratio": 1.0,
+        "heal_ratio": 0.0,
+        "shield_ratio": 0.0,
+        "hits": 1
+      }
     },
     {
       "id": "rabbit_scout",
@@ -25,10 +34,21 @@
       "description_ja": "クローバーが、すべての探検に幸運を運んでくれる。",
       "animal": "rabbit",
       "sprite": "res://assets/characters/playable/goblin_rabbit_scout_v1.png",
-      "bonuses": {"luck": 1},
+      "bonuses": {
+        "luck": 1
+      },
       "price_gems": 300,
       "test_price_gems": 0,
-      "sort_order": 1
+      "sort_order": 1,
+      "active_skill": {
+        "id": "lucky_clover_spin",
+        "name_key": "skill.rabbit_scout.name",
+        "description_key": "skill.rabbit_scout.description",
+        "damage_ratio": 1.15,
+        "heal_ratio": 0.25,
+        "shield_ratio": 0.0,
+        "hits": 1
+      }
     },
     {
       "id": "fox_mage",
@@ -39,10 +59,21 @@
       "description_ja": "すばしっこくて頭もいい。式を強い攻撃に変える。",
       "animal": "fox",
       "sprite": "res://assets/characters/playable/goblin_fox_mage_v1.png",
-      "bonuses": {"attack": 2},
+      "bonuses": {
+        "attack": 2
+      },
       "price_gems": 600,
       "test_price_gems": 0,
-      "sort_order": 2
+      "sort_order": 2,
+      "active_skill": {
+        "id": "twin_tail_foxfire",
+        "name_key": "skill.fox_mage.name",
+        "description_key": "skill.fox_mage.description",
+        "damage_ratio": 1.5,
+        "heal_ratio": 0.0,
+        "shield_ratio": 0.0,
+        "hits": 3
+      }
     },
     {
       "id": "panda_guardian",
@@ -53,10 +84,22 @@
       "description_ja": "落ち着いていて頼れる。頑丈な体で仲間を守る。",
       "animal": "panda",
       "sprite": "res://assets/characters/playable/goblin_panda_guardian_v1.png",
-      "bonuses": {"max_hp": 6, "defense": 1},
+      "bonuses": {
+        "max_hp": 6,
+        "defense": 1
+      },
       "price_gems": 900,
       "test_price_gems": 0,
-      "sort_order": 3
+      "sort_order": 3,
+      "active_skill": {
+        "id": "bamboo_heart_ward",
+        "name_key": "skill.panda_guardian.name",
+        "description_key": "skill.panda_guardian.description",
+        "damage_ratio": 1.5,
+        "heal_ratio": 0.0,
+        "shield_ratio": 0.4,
+        "hits": 1
+      }
     },
     {
       "id": "cat_knight",
@@ -67,10 +110,23 @@
       "description_ja": "勇敢な鈴の騎士。攻めと守り、幸運も同時にアップ。",
       "animal": "cat",
       "sprite": "res://assets/characters/playable/goblin_cat_knight_v1.png",
-      "bonuses": {"attack": 2, "max_hp": 3, "luck": 1},
+      "bonuses": {
+        "attack": 2,
+        "max_hp": 3,
+        "luck": 1
+      },
       "price_gems": 1400,
       "test_price_gems": 0,
-      "sort_order": 4
+      "sort_order": 4,
+      "active_skill": {
+        "id": "starbell_verdict",
+        "name_key": "skill.cat_knight.name",
+        "description_key": "skill.cat_knight.description",
+        "damage_ratio": 1.7,
+        "heal_ratio": 0.4,
+        "shield_ratio": 0.0,
+        "hits": 1
+      }
     },
     {
       "id": "dragon_champion",
@@ -81,10 +137,24 @@
       "description_ja": "星の炎の祝福で、力と命と守りが大幅アップ。",
       "animal": "dragon",
       "sprite": "res://assets/characters/playable/goblin_dragon_champion_v1.png",
-      "bonuses": {"attack": 3, "max_hp": 6, "defense": 2, "luck": 2},
+      "bonuses": {
+        "attack": 3,
+        "max_hp": 6,
+        "defense": 2,
+        "luck": 2
+      },
       "price_gems": 2200,
       "test_price_gems": 0,
-      "sort_order": 5
+      "sort_order": 5,
+      "active_skill": {
+        "id": "starflame_dragonburst",
+        "name_key": "skill.dragon_champion.name",
+        "description_key": "skill.dragon_champion.description",
+        "damage_ratio": 1.9,
+        "heal_ratio": 0.0,
+        "shield_ratio": 0.65,
+        "hits": 1
+      }
     }
   ]
 }
