@@ -1,7 +1,8 @@
 extends Node
 
 ## Versioned local persistence with migration, normalization, and a backup file.
-const SAVE_VERSION: int = 8
+const SAVE_VERSION: int = 10
+const MAX_BLOCKED_OPPONENTS: int = 100
 const SAVE_PATH: String = "user://save.json"
 # Keep literal language codes here: SaveManager normalizes during autoload
 # startup before the LanguageManager node is guaranteed to exist.
@@ -21,6 +22,8 @@ func create_new_save() -> Dictionary:
 		"save_version": SAVE_VERSION,
 		"language": DEFAULT_LANGUAGE,
 		"player_name": "",
+		"public_player_id": "",
+		"blocked_opponents": [],
 		"level": GameBalance.BASE_LEVEL,
 		"exp": GameBalance.BASE_EXP,
 		"coins": GameBalance.BASE_COINS,
@@ -50,7 +53,8 @@ func create_new_save() -> Dictionary:
 		"highest_combo": 0,
 		"total_questions": 0,
 		"total_correct_answers": 0,
-		"total_mistakes": 0
+		"total_mistakes": 0,
+		"skill_energy": 0
 	}
 
 func load_game() -> Dictionary:
@@ -121,6 +125,57 @@ func set_player_name(value: String) -> void:
 	current_data["player_name"] = value.strip_edges().substr(0, 16)
 	save_game(current_data)
 
+func set_public_player_id(value: String) -> void:
+	current_data["public_player_id"] = value.strip_edges().to_lower().substr(0, 32)
+	save_game(current_data)
+
+func get_blocked_opponents() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var raw: Variant = current_data.get("blocked_opponents", [])
+	if raw is Array:
+		for item: Variant in raw:
+			if item is Dictionary:
+				result.append(item.duplicate(true))
+	return result
+
+func is_opponent_blocked(player_id: String) -> bool:
+	if player_id.is_empty():
+		return false
+	for opponent: Dictionary in get_blocked_opponents():
+		if str(opponent.get("id", "")) == player_id:
+			return true
+	return false
+
+func block_opponent(player_id: String, player_name: String) -> bool:
+	var normalized_id: String = player_id.strip_edges().to_lower()
+	if normalized_id.length() != 32 or not normalized_id.is_valid_hex_number(false) or is_opponent_blocked(normalized_id):
+		return false
+	var blocked: Array[Dictionary] = get_blocked_opponents()
+	if blocked.size() >= MAX_BLOCKED_OPPONENTS:
+		return false
+	blocked.append({"id": normalized_id, "name": player_name.strip_edges().substr(0, 16)})
+	var previous_data: Dictionary = current_data.duplicate(true)
+	current_data["blocked_opponents"] = blocked
+	if save_game(current_data):
+		return true
+	current_data = previous_data
+	return false
+
+func unblock_opponent(player_id: String) -> bool:
+	var blocked: Array[Dictionary] = get_blocked_opponents()
+	var retained: Array[Dictionary] = []
+	for opponent: Dictionary in blocked:
+		if str(opponent.get("id", "")) != player_id:
+			retained.append(opponent)
+	if retained.size() == blocked.size():
+		return false
+	var previous_data: Dictionary = current_data.duplicate(true)
+	current_data["blocked_opponents"] = retained
+	if save_game(current_data):
+		return true
+	current_data = previous_data
+	return false
+
 func _replace_with_new_save() -> Dictionary:
 	var fresh: Dictionary = create_new_save()
 	current_data = fresh.duplicate(true)
@@ -161,10 +216,14 @@ func _normalize_save(raw: Dictionary) -> Dictionary:
 			normalized[key] = raw[key]
 
 	normalized["save_version"] = SAVE_VERSION
+	normalized["skill_energy"] = clampi(_to_int(normalized.get("skill_energy", 0), 0), 0, GameBalance.SKILL_ENERGY_MAX)
 	var stored_language: String = str(raw.get("language", normalized["language"]))
 	normalized["language"] = stored_language if VALID_LANGUAGES.has(stored_language) else DEFAULT_LANGUAGE
 	var stored_name: String = str(raw.get("player_name", "")).strip_edges()
 	normalized["player_name"] = stored_name.substr(0, 16)
+	var stored_public_id: String = str(raw.get("public_player_id", "")).strip_edges().to_lower()
+	normalized["public_player_id"] = stored_public_id if stored_public_id.is_valid_hex_number(false) and stored_public_id.length() == 32 else ""
+	normalized["blocked_opponents"] = _normalize_blocked_opponents(raw.get("blocked_opponents", []))
 	normalized["level"] = clampi(_to_int(normalized["level"], GameBalance.BASE_LEVEL), 1, 2_000_000_000)
 	normalized["exp"] = clampi(_to_int(normalized["exp"], GameBalance.BASE_EXP), 0, GameBalance.required_exp(int(normalized["level"])) * 10_000)
 	normalized["coins"] = maxi(0, _to_int(normalized["coins"], GameBalance.BASE_COINS))
@@ -238,6 +297,28 @@ func _normalize_save(raw: Dictionary) -> Dictionary:
 	normalized["total_correct_answers"] = mini(correct_answers, question_count)
 	normalized["total_mistakes"] = mini(mistakes, question_count - int(normalized["total_correct_answers"]))
 	return normalized
+
+func _normalize_blocked_opponents(raw_blocked: Variant) -> Array[Dictionary]:
+	var clean: Array[Dictionary] = []
+	if not raw_blocked is Array:
+		return clean
+	for item: Variant in raw_blocked:
+		if not item is Dictionary:
+			continue
+		var player_id: String = str(item.get("id", "")).strip_edges().to_lower()
+		if not player_id.is_valid_hex_number(false) or player_id.length() != 32:
+			continue
+		var already_present: bool = false
+		for existing: Dictionary in clean:
+			if str(existing.get("id", "")) == player_id:
+				already_present = true
+				break
+		if already_present:
+			continue
+		clean.append({"id": player_id, "name": str(item.get("name", "Player")).strip_edges().substr(0, 16)})
+		if clean.size() >= 100:
+			break
+	return clean
 
 func _normalize_unlocked_characters(raw_unlocked: Variant) -> Array[String]:
 	var unlocked: Array[String] = [GameBalance.DEFAULT_CHARACTER_ID]

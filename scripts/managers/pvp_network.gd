@@ -25,6 +25,7 @@ signal match_ended(payload: Dictionary)
 signal opponent_reconnecting(seconds_left: int)
 signal opponent_resumed()
 signal connection_lost()
+signal report_result(success: bool)
 
 const PvpProtocol: GDScript = preload("res://scripts/pvp/pvp_protocol.gd")
 const SERVER_CONFIG_PATH: String = "res://data/server_config.json"
@@ -36,6 +37,12 @@ const REJOIN_GRACE_MS: int = 3000
 const ROOM_CODE_ALPHABET: String = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 const ROOM_CODE_LENGTH: int = 4
 const NAME_MAX_LENGTH: int = 16
+const MAX_BLOCKED_PLAYER_IDS: int = 100
+const REPORT_CATEGORIES: Array[String] = ["abusive_name", "harassment", "cheating", "other"]
+const PLAYER_NAME_FILTER_TERMS: Array[String] = [
+	"fuck", "shit", "bitch", "cunt", "asshole", "nigger", "nigga", "faggot", "whore", "slut",
+	"仆街", "扑街", "屌", "閪", "鳩", "撚", "屄", "色情", "くそ", "死ね", "ちんこ", "まんこ"
+]
 
 var is_server_mode: bool = false
 # Guards the environment autodetection so tests can force server mode on
@@ -145,15 +152,53 @@ func is_online() -> bool:
 func get_display_name() -> String:
 	var saved: String = str(SaveManager.current_data.get("player_name", ""))
 	if not saved.is_empty():
-		return saved
+		var cleaned: String = _clean_name(saved)
+		if cleaned == saved:
+			return cleaned
+		SaveManager.set_player_name(cleaned)
+		return cleaned
 	var generated: String = LanguageManager.tf("pvp.default_name", [randi() % 9000 + 1000])
 	SaveManager.set_player_name(generated)
 	return generated
 
 func set_display_name(value: String) -> String:
-	var cleaned: String = value.strip_edges().substr(0, NAME_MAX_LENGTH)
+	var cleaned: String = _clean_name(value)
 	SaveManager.set_player_name(cleaned)
 	return cleaned
+
+func get_public_player_id() -> String:
+	var saved: String = str(SaveManager.current_data.get("public_player_id", "")).to_lower()
+	if saved.is_valid_hex_number(false) and saved.length() == 32:
+		return saved
+	var crypto: Crypto = Crypto.new()
+	var generated: String = crypto.generate_random_bytes(16).hex_encode()
+	SaveManager.set_public_player_id(generated)
+	return generated
+
+func get_blocked_player_ids() -> Array[String]:
+	var result: Array[String] = []
+	for opponent: Dictionary in SaveManager.get_blocked_opponents():
+		var player_id: String = str(opponent.get("id", ""))
+		if not player_id.is_empty() and not result.has(player_id):
+			result.append(player_id)
+	return result
+
+func block_opponent(player_id: String, player_name: String) -> bool:
+	return SaveManager.block_opponent(player_id, player_name)
+
+func unblock_opponent(player_id: String) -> bool:
+	return SaveManager.unblock_opponent(player_id)
+
+func report_opponent(player_id: String, category: String) -> bool:
+	if not in_match or not REPORT_CATEGORIES.has(category):
+		return false
+	if str(match_payload.get("opponent_id", "")) != player_id:
+		return false
+	var peer: MultiplayerPeer = multiplayer.multiplayer_peer
+	if peer == null or peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
+		return false
+	_srv_report_player.rpc_id(1, match_token, category)
+	return true
 
 func join_queue() -> bool:
 	if client_state != PvpProtocol.STATE_CONNECTED:
@@ -161,7 +206,7 @@ func join_queue() -> bool:
 	if GameManager.get_stamina() < GameBalance.STAMINA_PER_STAGE:
 		pvp_error.emit(PvpProtocol.ERR_NOT_ENOUGH_STAMINA)
 		return false
-	_srv_join_queue.rpc_id(1, get_display_name(), GameManager.get_current_progress_stage(), _character_id())
+	_srv_join_queue_v2.rpc_id(1, get_display_name(), GameManager.get_current_progress_stage(), _character_id(), get_public_player_id(), get_blocked_player_ids())
 	_set_state(PvpProtocol.STATE_QUEUED)
 	return true
 
@@ -171,7 +216,7 @@ func create_room() -> bool:
 	if GameManager.get_stamina() < GameBalance.STAMINA_PER_STAGE:
 		pvp_error.emit(PvpProtocol.ERR_NOT_ENOUGH_STAMINA)
 		return false
-	_srv_create_room.rpc_id(1, get_display_name(), GameManager.get_current_progress_stage(), _character_id())
+	_srv_create_room_v2.rpc_id(1, get_display_name(), GameManager.get_current_progress_stage(), _character_id(), get_public_player_id(), get_blocked_player_ids())
 	_set_state(PvpProtocol.STATE_ROOM_WAITING)
 	return true
 
@@ -184,7 +229,7 @@ func join_room(code: String) -> bool:
 	if GameManager.get_stamina() < GameBalance.STAMINA_PER_STAGE:
 		pvp_error.emit(PvpProtocol.ERR_NOT_ENOUGH_STAMINA)
 		return false
-	_srv_join_room.rpc_id(1, normalized, get_display_name(), GameManager.get_current_progress_stage(), _character_id())
+	_srv_join_room_v2.rpc_id(1, normalized, get_display_name(), GameManager.get_current_progress_stage(), _character_id(), get_public_player_id(), get_blocked_player_ids())
 	_set_state(PvpProtocol.STATE_QUEUED)
 	return true
 
@@ -226,13 +271,26 @@ func _srv_join_queue(player_name: String, stage: int, character_id: String) -> v
 	var sender: int = multiplayer.get_remote_sender_id()
 	if _sender_busy(sender):
 		return
-	srv_meta[sender] = {"name": _clean_name(player_name), "stage": stage, "char_id": character_id}
+	srv_meta[sender] = _make_legacy_player_meta(player_name, stage, character_id)
 	srv_queue.append(sender)
 	_cli_queued.rpc_id(sender)
-	if srv_queue.size() >= 2:
-		var first: int = srv_queue.pop_front()
-		var second: int = srv_queue.pop_front()
-		_server_start_match(first, second)
+	_try_match_queued_players()
+
+@rpc("any_peer", "call_remote", "reliable")
+func _srv_join_queue_v2(player_name: String, stage: int, character_id: String, player_id: String, blocked_ids: Array) -> void:
+	if not is_server_mode:
+		return
+	var sender: int = multiplayer.get_remote_sender_id()
+	if _sender_busy(sender):
+		return
+	var metadata: Dictionary = _make_player_meta(player_name, stage, character_id, player_id, blocked_ids)
+	if metadata.is_empty():
+		_cli_error.rpc_id(sender, PvpProtocol.ERR_INVALID_PLAYER_ID)
+		return
+	srv_meta[sender] = metadata
+	srv_queue.append(sender)
+	_cli_queued.rpc_id(sender)
+	_try_match_queued_players()
 
 @rpc("any_peer", "call_remote", "reliable")
 func _srv_create_room(player_name: String, stage: int, character_id: String) -> void:
@@ -241,10 +299,31 @@ func _srv_create_room(player_name: String, stage: int, character_id: String) -> 
 	var sender: int = multiplayer.get_remote_sender_id()
 	if _sender_busy(sender):
 		return
-	srv_meta[sender] = {"name": _clean_name(player_name), "stage": stage, "char_id": character_id}
+	srv_meta[sender] = _make_legacy_player_meta(player_name, stage, character_id)
 	var code: String = _generate_room_code()
 	srv_rooms[code] = {
 		"peer": sender,
+		"protocol_version": 1,
+		"expires_ms": Time.get_ticks_msec() + int(GameBalance.PVP_ROOM_LIFETIME_SECONDS * 1000.0),
+	}
+	_cli_room_created.rpc_id(sender, code)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _srv_create_room_v2(player_name: String, stage: int, character_id: String, player_id: String, blocked_ids: Array) -> void:
+	if not is_server_mode:
+		return
+	var sender: int = multiplayer.get_remote_sender_id()
+	if _sender_busy(sender):
+		return
+	var metadata: Dictionary = _make_player_meta(player_name, stage, character_id, player_id, blocked_ids)
+	if metadata.is_empty():
+		_cli_error.rpc_id(sender, PvpProtocol.ERR_INVALID_PLAYER_ID)
+		return
+	srv_meta[sender] = metadata
+	var code: String = _generate_room_code()
+	srv_rooms[code] = {
+		"peer": sender,
+		"protocol_version": 2,
 		"expires_ms": Time.get_ticks_msec() + int(GameBalance.PVP_ROOM_LIFETIME_SECONDS * 1000.0),
 	}
 	_cli_room_created.rpc_id(sender, code)
@@ -254,20 +333,83 @@ func _srv_join_room(code: String, player_name: String, stage: int, character_id:
 	if not is_server_mode:
 		return
 	var sender: int = multiplayer.get_remote_sender_id()
+	var joining_meta: Dictionary = _make_legacy_player_meta(player_name, stage, character_id)
+	_server_join_room(sender, code, joining_meta, 1)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _srv_join_room_v2(code: String, player_name: String, stage: int, character_id: String, player_id: String, blocked_ids: Array) -> void:
+	if not is_server_mode:
+		return
+	var sender: int = multiplayer.get_remote_sender_id()
+	var joining_meta: Dictionary = _make_player_meta(player_name, stage, character_id, player_id, blocked_ids)
+	if joining_meta.is_empty():
+		_cli_error.rpc_id(sender, PvpProtocol.ERR_INVALID_PLAYER_ID)
+		return
+	_server_join_room(sender, code, joining_meta, 2)
+
+func _server_join_room(sender: int, code: String, joining_meta: Dictionary, expected_protocol: int) -> void:
 	if _sender_busy(sender):
 		return
 	var room: Dictionary = srv_rooms.get(code, {})
 	if room.is_empty():
 		_cli_error.rpc_id(sender, PvpProtocol.ERR_INVALID_ROOM)
 		return
+	if int(room.get("protocol_version", 1)) != expected_protocol:
+		_cli_error.rpc_id(sender, PvpProtocol.ERR_INCOMPATIBLE_CLIENT)
+		return
 	var host: int = int(room["peer"])
 	if host == sender or not _peer_online(host) or not srv_meta.has(host):
 		srv_rooms.erase(code)
 		_cli_error.rpc_id(sender, PvpProtocol.ERR_INVALID_ROOM)
 		return
-	srv_meta[sender] = {"name": _clean_name(player_name), "stage": stage, "char_id": character_id}
+	if int(srv_meta[host].get("protocol_version", 1)) != expected_protocol:
+		_cli_error.rpc_id(sender, PvpProtocol.ERR_INCOMPATIBLE_CLIENT)
+		return
+	if expected_protocol == 2 and _players_block_each_other(srv_meta[host], joining_meta):
+		_cli_error.rpc_id(sender, PvpProtocol.ERR_BLOCKED_PLAYER)
+		return
+	srv_meta[sender] = joining_meta
 	srv_rooms.erase(code)
 	_server_start_match(host, sender)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _srv_report_player(token: String, category: String) -> void:
+	if not is_server_mode:
+		return
+	var sender: int = multiplayer.get_remote_sender_id()
+	if not srv_peer_match.has(sender) or not REPORT_CATEGORIES.has(category):
+		_cli_report_ack.rpc_id(sender, false)
+		return
+	var match_id: int = int(srv_peer_match[sender])
+	var match_state: Dictionary = srv_matches.get(match_id, {})
+	var reporter: Dictionary = _as_dictionary(match_state.get("players", {}).get(sender, {}))
+	if match_state.is_empty() or reporter.is_empty() or str(reporter.get("token", "")) != token:
+		_cli_report_ack.rpc_id(sender, false)
+		return
+	var reports_by: Dictionary = _as_dictionary(match_state.get("reports_by", {}))
+	if reports_by.has(sender):
+		_cli_report_ack.rpc_id(sender, false)
+		return
+	var opponent_peer_id: int = _other_peer_id(match_state, sender)
+	var reported: Dictionary = _as_dictionary(match_state.get("players", {}).get(opponent_peer_id, {}))
+	if reported.is_empty() or _validated_player_id(str(reported.get("player_id", ""))).is_empty():
+		_cli_report_ack.rpc_id(sender, false)
+		return
+	reports_by[sender] = true
+	match_state["reports_by"] = reports_by
+	var report: Dictionary = {
+		"match_id": match_id,
+		"reported_player_id": str(reported["player_id"]),
+		"reported_player_name": _clean_name(str(reported.get("name", "Player"))),
+		"category": category,
+		"received_at": Time.get_datetime_string_from_system(true, true),
+	}
+	print("PVP_SAFETY_REPORT " + JSON.stringify(report))
+	_cli_report_ack.rpc_id(sender, true)
+
+@rpc("authority", "call_remote", "reliable")
+func _cli_report_ack(success: bool) -> void:
+	report_result.emit(success)
 
 @rpc("any_peer", "call_remote", "reliable")
 func _srv_cancel() -> void:
@@ -338,9 +480,10 @@ func _srv_use_skill(index: int) -> void:
 		_send_skill_rejection(sender, "skill.unavailable")
 		return
 	player["skill_energy"] = maxi(0, int(player.get("skill_energy", 0)) - GameBalance.SKILL_ENERGY_COST)
-	var heal: int = GameBalance.skill_amount(GameBalance.PVP_BASE_ATTACK, float(skill.get("heal_ratio", 0.0)))
-	var shield: int = mini(GameBalance.PVP_BASE_HP, GameBalance.skill_amount(GameBalance.PVP_BASE_ATTACK, float(skill.get("shield_ratio", 0.0))))
-	var damage: int = GameBalance.skill_amount(GameBalance.PVP_BASE_ATTACK, float(skill.get("damage_ratio", 1.0)), 1)
+	var skill_values: Dictionary = GameBalance.pvp_skill_values()
+	var heal: int = maxi(0, int(skill_values.get("heal", 0)))
+	var shield: int = mini(GameBalance.PVP_BASE_HP, maxi(0, int(skill_values.get("shield", 0))))
+	var damage: int = maxi(1, int(skill_values.get("damage", 1)))
 	player["hp"] = mini(GameBalance.PVP_BASE_HP, int(player.get("hp", GameBalance.PVP_BASE_HP)) + heal)
 	player["skill_shield"] = maxi(int(player.get("skill_shield", 0)), shield)
 	var damage_applied: int = _server_apply_damage(target, damage)
@@ -581,6 +724,7 @@ func _fail_reconnect() -> void:
 	auto_rejoin_active = false
 	in_match = false
 	var opponent: String = str(match_payload.get("opponent_name", ""))
+	var opponent_id: String = str(match_payload.get("opponent_id", ""))
 	match_payload = {}
 	match_token = ""
 	_close_socket()
@@ -591,6 +735,7 @@ func _fail_reconnect() -> void:
 		"reason": PvpProtocol.ERR_DISCONNECTED,
 		"reward_coins": 0,
 		"opponent_name": opponent,
+		"opponent_id": opponent_id,
 	})
 
 # ------------------------------------------------------------------
@@ -652,13 +797,13 @@ func _server_start_match(first: int, second: int) -> void:
 	var match_id: int = srv_next_match_id
 	srv_next_match_id += 1
 	var seed_value: int = srv_rng.randi()
-	var min_stage: int = clampi(mini(_meta_stage(first), _meta_stage(second)), 1, 9999)
-	var stage_data: Dictionary = DataManager.get_stage(min_stage)
+	# PvP is a pure single-digit multiplication duel. Both clients receive the
+	# same seeded question stream, independent of either player's stage progress.
 	var params: Dictionary = {
-		"min_number": int(stage_data.get("min_number", 1)),
-		"max_number": int(stage_data.get("max_number", 10)),
-		"question_types": stage_data.get("question_types", ["addition"]),
-		"operation_ranges": stage_data.get("operation_ranges", {}),
+		"min_number": 1,
+		"max_number": 9,
+		"question_types": ["multiplication"],
+		"operation_ranges": {"multiplication": {"min": 1, "max": 9}},
 	}
 	var generator: QuestionGenerator = QuestionGenerator.new()
 	generator.set_seed(seed_value)
@@ -667,6 +812,7 @@ func _server_start_match(first: int, second: int) -> void:
 		players[peer_id] = {
 			"token": "%d_%d" % [match_id, srv_rng.randi()],
 			"name": str(srv_meta[peer_id]["name"]),
+			"player_id": str(srv_meta[peer_id]["player_id"]),
 			"char_id": str(srv_meta[peer_id]["char_id"]),
 			"hp": GameBalance.PVP_BASE_HP,
 			"combo": 0,
@@ -691,6 +837,7 @@ func _server_start_match(first: int, second: int) -> void:
 		"resume_phase": "countdown",
 		"reconnect_token": "",
 		"reconnect_deadline_ms": 0,
+		"reports_by": {},
 	}
 	srv_peer_match[first] = match_id
 	srv_peer_match[second] = match_id
@@ -815,6 +962,7 @@ func _server_end_match(match_state: Dictionary, winner: int, reason: String) -> 
 			"reason": reason,
 			"reward_coins": GameBalance.PVP_LOSE_COINS,
 			"opponent_name": str(match_state["players"][_other_peer_id(match_state, peer_id)]["name"]),
+			"opponent_id": str(match_state["players"][_other_peer_id(match_state, peer_id)]["player_id"]),
 		}
 		if not draw and is_winner:
 			payload["reward_coins"] = GameBalance.PVP_WIN_COINS
@@ -927,14 +1075,83 @@ func _character_id() -> String:
 	return str(GameManager.get_selected_character().get("id", GameBalance.DEFAULT_CHARACTER_ID))
 
 func _clean_name(value: String) -> String:
-	var cleaned: String = value.strip_edges().substr(0, NAME_MAX_LENGTH)
+	var cleaned: String = value.replace("\n", " ").replace("\r", " ").replace("\t", " ").strip_edges().substr(0, NAME_MAX_LENGTH)
 	if cleaned.is_empty():
 		cleaned = "Player"
+	var lowered: String = cleaned.to_lower()
+	for term: String in PLAYER_NAME_FILTER_TERMS:
+		if lowered.contains(term.to_lower()):
+			return "Player"
 	return cleaned
 
-func _meta_stage(peer_id: int) -> int:
-	var meta: Dictionary = srv_meta.get(peer_id, {})
-	return int(meta.get("stage", 1))
+func _make_player_meta(player_name: String, stage: int, character_id: String, player_id: String, blocked_ids: Array) -> Dictionary:
+	var validated_id: String = _validated_player_id(player_id)
+	if validated_id.is_empty():
+		return {}
+	return {
+		"name": _clean_name(player_name),
+		"stage": clampi(stage, 1, GameBalance.MAX_STAGE_ID),
+		"char_id": character_id,
+		"player_id": validated_id,
+		"blocked_ids": _validated_blocked_ids(blocked_ids),
+		"protocol_version": 2,
+	}
+
+func _make_legacy_player_meta(player_name: String, stage: int, character_id: String) -> Dictionary:
+	return {
+		"name": _clean_name(player_name),
+		"stage": clampi(stage, 1, GameBalance.MAX_STAGE_ID),
+		"char_id": character_id,
+		"player_id": "",
+		"blocked_ids": [],
+		"protocol_version": 1,
+	}
+
+func _validated_player_id(value: String) -> String:
+	var cleaned: String = value.strip_edges().to_lower()
+	return cleaned if cleaned.length() == 32 and cleaned.is_valid_hex_number(false) else ""
+
+func _validated_blocked_ids(values: Array) -> Array[String]:
+	var result: Array[String] = []
+	for raw_value: Variant in values:
+		var player_id: String = _validated_player_id(str(raw_value))
+		if player_id.is_empty() or result.has(player_id):
+			continue
+		result.append(player_id)
+		if result.size() >= MAX_BLOCKED_PLAYER_IDS:
+			break
+	return result
+
+func _players_block_each_other(first: Dictionary, second: Dictionary) -> bool:
+	if int(first.get("protocol_version", 1)) != 2 or int(second.get("protocol_version", 1)) != 2:
+		return false
+	var first_id: String = str(first.get("player_id", ""))
+	var second_id: String = str(second.get("player_id", ""))
+	if first_id.is_empty() or second_id.is_empty():
+		return true
+	if first_id == second_id:
+		return true
+	var first_blocks: Array = first.get("blocked_ids", [])
+	var second_blocks: Array = second.get("blocked_ids", [])
+	return first_blocks.has(second_id) or second_blocks.has(first_id)
+
+func _try_match_queued_players() -> void:
+	for first_index: int in range(srv_queue.size()):
+		var first: int = int(srv_queue[first_index])
+		if not _peer_online(first) or not srv_meta.has(first):
+			continue
+		for second_index: int in range(first_index + 1, srv_queue.size()):
+			var second: int = int(srv_queue[second_index])
+			if not _peer_online(second) or not srv_meta.has(second):
+				continue
+			if int(srv_meta[first].get("protocol_version", 1)) != int(srv_meta[second].get("protocol_version", 1)):
+				continue
+			if _players_block_each_other(srv_meta[first], srv_meta[second]):
+				continue
+			srv_queue.remove_at(second_index)
+			srv_queue.remove_at(first_index)
+			_server_start_match(first, second)
+			return
 
 func _sender_busy(sender: int) -> bool:
 	return srv_peer_match.has(sender) or srv_queue.has(sender) or not _room_hosting(sender).is_empty()
@@ -970,6 +1187,7 @@ func _match_payload_for(match_id: int, peer_id: int, resumed: bool) -> Dictionar
 	return {
 		"char_id": str(me["char_id"]),
 		"opponent_name": str(other["name"]),
+		"opponent_id": str(other["player_id"]),
 		"opponent_char": str(other["char_id"]),
 		"seed": int(match_state["seed"]),
 		"params": match_state["params"],

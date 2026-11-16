@@ -66,6 +66,10 @@ const STAMINA_AD_REWARD: int = 5
 # every answer before applying damage.
 const PVP_BASE_HP: int = 30
 const PVP_BASE_ATTACK: int = 10
+# PvP skills use a fixed power budget so character selection never buys an advantage.
+const PVP_SKILL_DAMAGE: int = 15
+const PVP_SKILL_HEAL: int = 3
+const PVP_SKILL_SHIELD: int = 3
 const SKILL_ENERGY_MAX: int = 6
 const SKILL_ENERGY_COST: int = 3
 const PVP_QUESTION_SECONDS: int = 10
@@ -83,6 +87,13 @@ const RARITY_MULTIPLIERS: Dictionary = {
 	"legendary": 2.35,
 	"mythic": 3.0
 }
+
+static func pvp_skill_values() -> Dictionary:
+	return {
+		"damage": PVP_SKILL_DAMAGE,
+		"heal": PVP_SKILL_HEAL,
+		"shield": PVP_SKILL_SHIELD
+	}
 
 static func skill_energy_gain(combo: int) -> int:
 	if combo >= 10:

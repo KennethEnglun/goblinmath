@@ -33,6 +33,9 @@ const ERR_INVALID_ROOM: String = "invalid_room"
 const ERR_ROOM_EXPIRED: String = "room_expired"
 const ERR_NOT_ENOUGH_STAMINA: String = "not_enough_stamina"
 const ERR_DISCONNECTED: String = "disconnected"
+const ERR_BLOCKED_PLAYER: String = "blocked_player"
+const ERR_INCOMPATIBLE_CLIENT: String = "incompatible_client"
+const ERR_INVALID_PLAYER_ID: String = "invalid_player_id"
 
 # Match end reasons (MSG_END "reason").
 const END_REASON_HP: String = "hp"
